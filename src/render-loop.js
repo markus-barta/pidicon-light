@@ -109,7 +109,7 @@ export class RenderLoop {
     // --- Load scene --------------------------------------------------------
     let scene;
     try {
-      scene = await this.sceneLoader.load(sceneName);
+      scene = await this.sceneLoader.load(sceneName, this.deviceName);
     } catch (loadError) {
       this._handleError(loadError, `loading scene "${sceneName}"`);
       await this._sleep(this.currentBackoff);

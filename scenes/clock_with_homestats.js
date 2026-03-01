@@ -11,69 +11,70 @@
  *   OPEN/UNLOCKED = Green
  *   CLOSED/LOCKED = Red
  *   TRANSITIONING = Yellow (Nuki only)
- *   ERROR/UNKNOWN = Yellow (caution; blue only for Nuki jammed/error)
+ *   ERROR/UNKNOWN = Yellow (caution); Blue only for Nuki jammed/error
  *
- * Day mode  (07:00–19:00): HH:MM:SS at x1, bright colors, BRI 20
- * Night mode (19:00–07:00): HH:MM only at x7 (+6px), ALL colors extremely dim,
- *                            BRI 5. Child must be able to sleep — no bright anything.
+ * Day mode  (configurable, default 07:00–19:00): HH:MM:SS at x1, bright colors
+ * Night mode (configurable, default 19:00–07:00): HH:MM at x7, all colors dim,
+ *   child-safe brightness. No bright anything — boy must sleep well.
  *
- * Brightness heartbeat: re-asserted every 5 min (guards against missed transitions).
+ * Brightness heartbeat: re-asserted every 5 min (guards missed transitions).
  *
- * Debug overrides via MQTT (retained, cleared by publishing empty/null):
- *   pidicon-light/debug/night_override    → "true" | "false"
- *   pidicon-light/debug/battery_pct       → "0"–"100"
- *   pidicon-light/debug/battery_state     → "charging" | "discharging" | "standby"
+ * ── Settings topics (device+scene scoped, retained) ─────────────────────────
+ * pidicon-light/<device>/<scene>/settings/day_start_hour   default: 7
+ * pidicon-light/<device>/<scene>/settings/night_start_hour default: 19
+ * pidicon-light/<device>/<scene>/settings/bri_day          default: 20
+ * pidicon-light/<device>/<scene>/settings/bri_night        default: 8
  *
- * MQTT source topics:
- *   homeassistant/lock/nuki_vr/state                                              → string
- *   z2m/wz/contact/te-door                                                        → {contact: bool}
- *   z2m/vk/contact/w13                                                            → {contact: bool}
- *   z2m/vr/contact/w14                                                            → {contact: bool}
- *   homeassistant/sensor/sonnenbatterie_260365_state_battery_percentage_user/state → "0"–"100"
- *   homeassistant/sensor/sonnenbatterie_260365_state_sonnenbatterie/state          → string
+ * ── Debug override topics (global, retained, cleared with empty payload) ────
+ * pidicon-light/debug/mode_override    "day" | "night" | ""
+ * pidicon-light/debug/bri_override     1–255 | ""
+ * pidicon-light/debug/battery_pct      0–100 | ""
+ * pidicon-light/debug/battery_state    "charging" | "discharging" | "standby" | ""
  *
- * Draw layout (day):
- *   x1        time HH:MM:SS (row 0)
- *   x0–6      terrace door segments (row 7)
- *   x13–14    skylight W13 2×2 (rows 6–7)
- *   x16–17    skylight W14 2×2 (rows 6–7)
- *   x25–27    Nuki bar (row 7)
- *   x28       separator (empty)
- *   x29–31    battery icon (rows 1–6, nub at 0 or 7)
+ * ── Sensor source topics ────────────────────────────────────────────────────
+ * homeassistant/lock/nuki_vr/state                                              → string
+ * z2m/wz/contact/te-door                                                        → {contact: bool}
+ * z2m/vk/contact/w13                                                            → {contact: bool}
+ * z2m/vr/contact/w14                                                            → {contact: bool}
+ * homeassistant/sensor/sonnenbatterie_260365_state_battery_percentage_user/state → "0"–"100"
+ * homeassistant/sensor/sonnenbatterie_260365_state_sonnenbatterie/state          → string
  *
- * Draw layout (night):
- *   x7        time HH:MM only (+6px right, shorter text)
- *   sensors + battery: same positions, all extremely dim
+ * ── Draw layout ─────────────────────────────────────────────────────────────
+ * Day:   x1  time HH:MM:SS
+ * Night: x7  time HH:MM (+6px right, shorter text)
+ * x0–6   terrace door segments (row 7)
+ * x13–14 skylight W13 2×2 (rows 6–7)
+ * x16–17 skylight W14 2×2 (rows 6–7)
+ * x25–27 Nuki bar (row 7)
+ * x28    separator (empty)
+ * x29–31 battery icon (rows 1–6, nub at row 0 or 7)
  */
 
 // ---------------------------------------------------------------------------
-// Color palettes
+// Default color palettes
 // ---------------------------------------------------------------------------
 
 const DAY = {
-  NUKI_UNLOCKED: [0, 255, 0], // Green
-  NUKI_LOCKED: [255, 0, 0], // Red
-  NUKI_TRANSITIONING: [255, 255, 0], // Yellow
-  NUKI_ERROR: [0, 0, 255], // Blue — jammed/error
-  OPEN: [0, 255, 0], // Green
-  CLOSED: [255, 0, 0], // Red
-  UNKNOWN: [255, 255, 0], // Yellow — caution/offline
-  TIME: [255, 255, 213], // Warm white
-  BRI: 20,
+  NUKI_UNLOCKED: [0, 255, 0],
+  NUKI_LOCKED: [255, 0, 0],
+  NUKI_TRANSITIONING: [255, 255, 0],
+  NUKI_ERROR: [0, 0, 255],
+  OPEN: [0, 255, 0],
+  CLOSED: [255, 0, 0],
+  UNKNOWN: [255, 255, 0],
+  TIME: [255, 255, 213],
 };
 
-// Night: ALL values must be very subtle — child sleeping.
-// Max channel value: 40. Error/unknown still visible but not disruptive.
+// Night: dim but visible — max ~40 per channel, TIME in warm red
 const NIGHT = {
-  NUKI_UNLOCKED: [0, 30, 0], // Very dim green
-  NUKI_LOCKED: [30, 0, 0], // Very dim red
-  NUKI_TRANSITIONING: [25, 25, 0], // Very dim yellow
-  NUKI_ERROR: [0, 0, 30], // Very dim blue
-  OPEN: [0, 30, 0], // Very dim green
-  CLOSED: [30, 0, 0], // Very dim red
-  UNKNOWN: [25, 25, 0], // Very dim yellow
-  TIME: [20, 12, 12], // Barely visible warm
-  BRI: 2, // Absolute minimum brightness
+  NUKI_UNLOCKED: [0, 40, 0],
+  NUKI_LOCKED: [40, 0, 0],
+  NUKI_TRANSITIONING: [35, 35, 0],
+  NUKI_ERROR: [0, 0, 40],
+  OPEN: [0, 40, 0],
+  CLOSED: [40, 0, 0],
+  UNKNOWN: [35, 35, 0],
+  TIME: [80, 30, 20], // dim warm red — readable in dark room
 };
 
 // Brightness heartbeat — re-assert every 5 min (missed transition guard)
@@ -86,8 +87,7 @@ export default {
   description: "Time + Nuki / terrace / skylights / sonnenbatterie. Day/night.",
 
   // ---------------------------------------------------------------------------
-  // init — subscribe to all topics; retained messages arrive synchronously
-  // on next event-loop tick after subscribe ACK (handler registered first)
+  // init
   // ---------------------------------------------------------------------------
   async init(context) {
     this._state = {
@@ -99,17 +99,70 @@ export default {
       batteryState: null,
     };
 
-    // Debug overrides — null means "not set" (use real values)
+    // Settings — overridable via MQTT, fallback to defaults
+    this._settings = {
+      dayStartHour: 7,
+      nightStartHour: 19,
+      briDay: 20,
+      briNight: 8,
+    };
+
+    // Debug overrides — null = not active
     this._debug = {
-      nightOverride: null, // true → force night mode
-      batteryPct: null, // override SOC
-      batteryState: null, // override charge state
+      modeOverride: null, // "day" | "night" | null
+      briOverride: null, // number | null
+      batteryPct: null,
+      batteryState: null,
     };
 
     this._lastMode = null;
     this._lastBriSet = 0;
 
-    // --- Sensor topics -------------------------------------------------------
+    const S = context.settingsTopic; // pidicon-light/<device>/<scene>/settings
+
+    // --- Settings -----------------------------------------------------------
+
+    const parseHour = (msg) => {
+      const h = parseInt(msg.trim(), 10);
+      return !isNaN(h) && h >= 0 && h <= 23 ? h : null;
+    };
+    const parseBri = (msg) => {
+      const b = parseInt(msg.trim(), 10);
+      return !isNaN(b) && b >= 1 && b <= 255 ? b : null;
+    };
+
+    context.mqtt.subscribe(`${S}/day_start_hour`, (msg) => {
+      const v = parseHour(msg);
+      if (v !== null) {
+        this._settings.dayStartHour = v;
+        context.logger.info(`[${this.name}] day_start_hour = ${v}`);
+      }
+    });
+    context.mqtt.subscribe(`${S}/night_start_hour`, (msg) => {
+      const v = parseHour(msg);
+      if (v !== null) {
+        this._settings.nightStartHour = v;
+        context.logger.info(`[${this.name}] night_start_hour = ${v}`);
+      }
+    });
+    context.mqtt.subscribe(`${S}/bri_day`, (msg) => {
+      const v = parseBri(msg);
+      if (v !== null) {
+        this._settings.briDay = v;
+        this._lastBriSet = 0;
+        context.logger.info(`[${this.name}] bri_day = ${v}`);
+      }
+    });
+    context.mqtt.subscribe(`${S}/bri_night`, (msg) => {
+      const v = parseBri(msg);
+      if (v !== null) {
+        this._settings.briNight = v;
+        this._lastBriSet = 0;
+        context.logger.info(`[${this.name}] bri_night = ${v}`);
+      }
+    });
+
+    // --- Sensor topics ------------------------------------------------------
 
     context.mqtt.subscribe("homeassistant/lock/nuki_vr/state", (msg) => {
       this._state.nukiState = msg.trim();
@@ -149,47 +202,53 @@ export default {
       },
     );
 
-    // --- Debug override topics -----------------------------------------------
-    // Retained so they survive restarts. Clear with empty payload or "false"/"null".
+    // --- Debug overrides ----------------------------------------------------
 
-    context.mqtt.subscribe("pidicon-light/debug/night_override", (msg) => {
+    const clearable = (msg, parser) => {
+      const v = msg.trim();
+      return v === "" || v === "null" ? null : parser(v);
+    };
+
+    context.mqtt.subscribe("pidicon-light/debug/mode_override", (msg) => {
       const v = msg.trim().toLowerCase();
-      this._debug.nightOverride =
-        v === "true" || v === "1"
-          ? true
-          : v === "false" || v === "0" || v === "" || v === "null"
-            ? null
-            : null;
+      this._debug.modeOverride = v === "day" || v === "night" ? v : null;
+      this._lastBriSet = 0; // force brightness re-assert on mode change
       context.logger.info(
-        `[clock_with_homestats] debug night_override = ${this._debug.nightOverride}`,
+        `[${this.name}] debug mode_override = ${this._debug.modeOverride}`,
+      );
+    });
+
+    context.mqtt.subscribe("pidicon-light/debug/bri_override", (msg) => {
+      this._debug.briOverride = clearable(msg, (v) => {
+        const b = parseInt(v, 10);
+        return !isNaN(b) && b >= 1 && b <= 255 ? b : null;
+      });
+      this._lastBriSet = 0;
+      context.logger.info(
+        `[${this.name}] debug bri_override = ${this._debug.briOverride}`,
       );
     });
 
     context.mqtt.subscribe("pidicon-light/debug/battery_pct", (msg) => {
-      const v = msg.trim();
-      const pct = parseFloat(v);
-      this._debug.batteryPct =
-        v === "" || v === "null"
-          ? null
-          : isNaN(pct)
-            ? null
-            : Math.max(0, Math.min(100, pct));
+      this._debug.batteryPct = clearable(msg, (v) => {
+        const pct = parseFloat(v);
+        return isNaN(pct) ? null : Math.max(0, Math.min(100, pct));
+      });
       context.logger.info(
-        `[clock_with_homestats] debug battery_pct = ${this._debug.batteryPct}`,
+        `[${this.name}] debug battery_pct = ${this._debug.batteryPct}`,
       );
     });
 
     context.mqtt.subscribe("pidicon-light/debug/battery_state", (msg) => {
-      const v = msg.trim().toLowerCase();
-      this._debug.batteryState = v === "" || v === "null" ? null : v;
+      this._debug.batteryState = clearable(msg, (v) => v || null);
       context.logger.info(
-        `[clock_with_homestats] debug battery_state = ${this._debug.batteryState}`,
+        `[${this.name}] debug battery_state = ${this._debug.batteryState}`,
       );
     });
   },
 
   // ---------------------------------------------------------------------------
-  // destroy — clean up all subscriptions on scene eviction / config reload
+  // destroy
   // ---------------------------------------------------------------------------
   async destroy(context) {
     context.mqtt.unsubscribeAll();
@@ -199,25 +258,34 @@ export default {
   // render — called every 1000 ms
   // ---------------------------------------------------------------------------
   async render(device) {
-    if (!this._state) return 500; // guard: init() not yet complete
+    if (!this._state) return 500;
 
-    // Determine mode — debug override takes priority
     const hour = new Date().getHours();
+    const { dayStartHour, nightStartHour, briDay, briNight } = this._settings;
+
+    // Mode: debug override > time-based
     const isDay =
-      this._debug.nightOverride === true ? false : hour >= 7 && hour < 19;
+      this._debug.modeOverride === "day"
+        ? true
+        : this._debug.modeOverride === "night"
+          ? false
+          : hour >= dayStartHour && hour < nightStartHour;
+
     const mode = isDay ? "day" : "night";
     const C = isDay ? DAY : NIGHT;
 
-    // Brightness: assert on mode change or heartbeat
+    // Brightness: debug override > settings
+    const targetBri = this._debug.briOverride ?? (isDay ? briDay : briNight);
+
     const modeChanged = mode !== this._lastMode;
     const briHeartbeat = Date.now() - this._lastBriSet >= BRI_HEARTBEAT_MS;
     if (modeChanged || briHeartbeat) {
-      await device.setBrightness(C.BRI);
+      await device.setBrightness(targetBri);
       this._lastBriSet = Date.now();
       this._lastMode = mode;
     }
 
-    // Time string — HH:MM:SS in day, HH:MM only at night (shorter + shifted right)
+    // Time
     const now = new Date();
     const timeStr = isDay
       ? now.toLocaleTimeString("de-AT", {
@@ -233,8 +301,6 @@ export default {
           minute: "2-digit",
           hour12: false,
         });
-
-    // Time x-position: day=1, night=7 (+6px right, centered for shorter text)
     const timeX = isDay ? 1 : 7;
 
     // Sensor colors
@@ -242,19 +308,17 @@ export default {
     const terraceColor = this._openClosedColor(this._state.terraceOpen, C);
     const w13Color = this._openClosedColor(this._state.w13Open, C);
     const w14Color = this._openClosedColor(this._state.w14Open, C);
-
-    // Terrace door gap: closed=gap (tx=1), open=no gap (tx=0)
-    const tx = this._state.terraceOpen ? 0 : 1;
+    const tx = this._state.terraceOpen ? 0 : 1; // closed=gap
 
     await device.drawCustom({
       draw: [
-        { dt: [timeX, 0, timeStr, C.TIME] }, // time
-        { dl: [25, 7, 27, 7, nukiColor] }, // nuki bar
-        { dr: [13, 6, 2, 2, w13Color] }, // skylight W13
-        { dr: [16, 6, 2, 2, w14Color] }, // skylight W14
-        { dl: [tx, 7, tx + 2, 7, terraceColor] }, // terrace seg 1
-        { dl: [4, 7, 6, 7, terraceColor] }, // terrace seg 2
-        ...this._batteryDraw(isDay), // x29–31 battery
+        { dt: [timeX, 0, timeStr, C.TIME] },
+        { dl: [25, 7, 27, 7, nukiColor] },
+        { dr: [13, 6, 2, 2, w13Color] },
+        { dr: [16, 6, 2, 2, w14Color] },
+        { dl: [tx, 7, tx + 2, 7, terraceColor] },
+        { dl: [4, 7, 6, 7, terraceColor] },
+        ...this._batteryDraw(isDay),
       ],
     });
 
@@ -286,35 +350,29 @@ export default {
 
   /**
    * Battery icon x29–31, rows 0–7.
-   *
-   * Body: rows 1–6 (6 rows × 3 cols = 18px = 100%)
-   * Nub:  charging → top center (x30, y0)
-   *       discharging → bottom center (x30, y7)
-   * Fill: always bottom→top, left→right
-   * Colors: charging=green, discharging=red; night versions extremely dim.
+   * Fill: bottom→top, left→right. 18px = 100%.
+   * Nub: charging=top (y0), discharging=bottom (y7).
    */
   _batteryDraw(isDay) {
     const TOTAL_ROWS = 6;
-    const TOTAL_PX = TOTAL_ROWS * 3; // 18
+    const TOTAL_PX = 18;
     const X_START = 29;
     const X_END = 31;
     const X_NUB = 30;
 
-    // Use debug overrides if set
     const pct = this._debug.batteryPct ?? this._state.batteryPct;
     const state = this._debug.batteryState ?? this._state.batteryState;
 
     const isCharging = state === "charging";
     const isDischarging = state === "discharging";
 
-    // Colors — night versions must be very subtle
     let fillColor, dimColor;
     if (isDay) {
-      fillColor = isCharging ? [0, 255, 0] : [255, 0, 0]; // green or red
+      fillColor = isCharging ? [0, 255, 0] : [255, 0, 0];
       dimColor = isCharging ? [0, 30, 0] : [30, 0, 0];
     } else {
-      fillColor = isCharging ? [0, 25, 0] : [25, 0, 0]; // extremely dim
-      dimColor = [8, 0, 0]; // barely visible
+      fillColor = isCharging ? [0, 25, 0] : [25, 0, 0];
+      dimColor = [8, 0, 0];
     }
 
     const filledPx =
@@ -329,7 +387,6 @@ export default {
 
     for (let row = TOTAL_ROWS; row >= 1; row--) {
       const rowFilled = Math.min(3, Math.max(0, filledPx - filled));
-
       if (rowFilled === 3) {
         cmds.push({ dl: [X_START, row, X_END, row, fillColor] });
       } else if (rowFilled === 0) {
@@ -340,12 +397,11 @@ export default {
         });
         cmds.push({ dl: [X_START + rowFilled, row, X_END, row, dimColor] });
       }
-
       filled += 3;
     }
 
-    if (isCharging) cmds.push({ dp: [X_NUB, 0, fillColor] }); // nub top
-    if (isDischarging) cmds.push({ dp: [X_NUB, 7, fillColor] }); // nub bottom
+    if (isCharging) cmds.push({ dp: [X_NUB, 0, fillColor] });
+    if (isDischarging) cmds.push({ dp: [X_NUB, 7, fillColor] });
 
     return cmds;
   },
