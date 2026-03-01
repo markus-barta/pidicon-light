@@ -7,6 +7,7 @@ import { ConfigLoader } from "../lib/config-loader.js";
 import { SceneLoader } from "../lib/scene-loader.js";
 import { RenderLoop } from "./render-loop.js";
 import { UlanziDriver } from "../lib/ulanzi-driver.js";
+import { PixooDriver } from "../lib/pixoo-driver.js";
 import { MqttService } from "../lib/mqtt-service.js";
 import { ConfigWatcher } from "../lib/config-watcher.js";
 import { dirname, join } from "path";
@@ -90,24 +91,20 @@ async function startDevice(device) {
     `[pidicon-light] Starting device: ${device.name} (${device.type} @ ${device.ip})`,
   );
 
-  if (device.type === "pixoo") {
-    logger.warn(
-      `[pidicon-light] Pixoo driver not yet implemented — skipping ${device.name}`,
-    );
-    return null;
-  }
-
-  if (device.type !== "ulanzi") {
+  let driver;
+  if (device.type === "ulanzi") {
+    driver = new UlanziDriver(device.ip, {
+      appName: `pidicon_${device.name}`,
+      logger,
+    });
+  } else if (device.type === "pixoo") {
+    driver = new PixooDriver(device.ip, { logger });
+  } else {
     logger.warn(
       `[pidicon-light] Unknown device type "${device.type}" — skipping ${device.name}`,
     );
     return null;
   }
-
-  const driver = new UlanziDriver(device.ip, {
-    appName: `pidicon_${device.name}`,
-    logger,
-  });
 
   const initialized = await driver.initialize();
   if (!initialized) {
