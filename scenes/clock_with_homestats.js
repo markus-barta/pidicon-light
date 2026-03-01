@@ -41,12 +41,12 @@
  *   Fields used: BatteryCharging (bool), BatteryDischarging (bool), USOC (0–100)
  *
  * ── Draw layout ─────────────────────────────────────────────────────────────
- * Day:   x1  time HH:MM:SS
- * Night: x7  time HH:MM (+6px right, shorter text)
+ * Day:   x0  time HH:MM:SS
+ * Night: x6  time HH:MM (+6px right, shorter text)
  * x0–6   terrace door segments (row 7)
- * x13–14 skylight W13 2×2 (rows 6–7)
- * x16–17 skylight W14 2×2 (rows 6–7)
- * x25–27 Nuki bar (row 7)
+ * x11–12 skylight W13 2×2 (rows 6–7)
+ * x14–15 skylight W14 2×2 (rows 6–7)
+ * x24–26 Nuki bar (row 7)
  * x28    separator (empty)
  * x29–31 battery icon (rows 1–6, nub at row 0 or 7)
  */
@@ -291,7 +291,7 @@ export default {
           minute: "2-digit",
           hour12: false,
         });
-    const timeX = isDay ? 1 : 7;
+    const timeX = isDay ? 0 : 6;
 
     // Sensor colors
     const nukiColor = this._nukiColor(C);
@@ -302,10 +302,10 @@ export default {
 
     await device.drawCustom({
       draw: [
-        { dt: [timeX, 0, timeStr, C.TIME] },
-        { dl: [25, 7, 27, 7, nukiColor] },
-        { dr: [13, 6, 2, 2, w13Color] },
-        { dr: [16, 6, 2, 2, w14Color] },
+        { dt: [timeX, 0, timeStr, C.TIME] }, // day: x0, night: x6
+        { dl: [24, 7, 26, 7, nukiColor] }, // nuki: -1px (was 25-27)
+        { dr: [11, 6, 2, 2, w13Color] }, // skylight W13: -2px (was 13)
+        { dr: [14, 6, 2, 2, w14Color] }, // skylight W14: -2px (was 16)
         { dl: [tx, 7, tx + 2, 7, terraceColor] },
         { dl: [4, 7, 6, 7, terraceColor] },
         ...this._batteryDraw(isDay),
