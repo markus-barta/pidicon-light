@@ -5,5 +5,5 @@
     pkgs.gh
   ];
 
-  scripts.exec = "node src/index.js";
+  scripts.exec.exec = "node src/index.js";
 }

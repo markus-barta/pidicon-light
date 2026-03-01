@@ -21,15 +21,16 @@ cd "$ROOT_DIR"
 VERSION="${1:-latest}"
 IMAGE="ghcr.io/markus-barta/pidicon-light"
 
-echo "[build-and-push] Building ${IMAGE}:${VERSION}..."
+echo "[build-and-push] Building ${IMAGE}:${VERSION} (linux/amd64 + linux/arm64)..."
 
-# Build
-docker build -t "${IMAGE}:${VERSION}" -t "${IMAGE}:latest" .
-
-# Push
-echo "[build-and-push] Pushing to GHCR..."
-docker push "${IMAGE}:${VERSION}"
-docker push "${IMAGE}:latest"
+# Multi-platform build: hsb1 is x86_64, but builds may run on Apple Silicon
+# --push streams directly to the registry (buildx requirement for multi-platform)
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --tag "${IMAGE}:${VERSION}" \
+  --tag "${IMAGE}:latest" \
+  --push \
+  .
 
 echo "[build-and-push] ✅ Done!"
 echo "  Image: ${IMAGE}:${VERSION}"

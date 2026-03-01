@@ -4,17 +4,12 @@
       "name": "ulanzi-01",
       "type": "ulanzi",
       "ip": "192.168.1.xxx",
-      "scenes": ["clock", "weather"]
+      "scenes": ["clock"]
     }
   ],
   "scenes": {
     "clock": {
-      "path": "./scenes/clock.js",
-      "interval": 5000
-    },
-    "weather": {
-      "path": "./scenes/weather.js",
-      "interval": 10000
+      "path": "./scenes/clock.js"
     }
   }
 }

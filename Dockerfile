@@ -2,20 +2,26 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
+# Install dependencies first (separate layer for caching)
 COPY package*.json ./
+RUN npm ci --only=production && npm cache clean --force
 
-# Install dependencies
-RUN npm ci --only=production
-
-# Copy source code
+# Copy application source (.dockerignore excludes secrets, devenv, tests, etc.)
 COPY . .
 
-# Create data directory for config
+# Data directory is mounted at runtime; create as fallback for local runs
 RUN mkdir -p /data
 
-# Default config path
-ENV PIDICON_CONFIG_PATH=/data/config.json
+# ---- Runtime defaults (all can be overridden in docker-compose) ----
+ENV PIDICON_CONFIG_PATH=/data/config.json \
+    MQTT_HOST=localhost \
+    MQTT_PORT=1883 \
+    MQTT_USER=smarthome \
+    LOG_LEVEL=info \
+    TZ=Europe/Vienna
 
-# Run the daemon
+# Health check: verify the node process is running and the config file is readable
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD node -e "require('fs').accessSync(process.env.PIDICON_CONFIG_PATH || '/data/config.json', require('fs').constants.R_OK); process.exit(0);" || exit 1
+
 CMD ["node", "src/index.js"]

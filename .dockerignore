@@ -1,0 +1,45 @@
+# Development environment
+.devenv/
+.devenv.flake.nix
+.direnv/
+devenv.lock
+devenv.nix
+
+# Git
+.git/
+.gitignore
+
+# Node
+node_modules/
+
+# Config / secrets (never bake real config into image)
+config.json
+.env
+.env.local
+
+# Runtime data
+data/
+tmp/
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# CI / tests
+coverage/
+test-results/
+test/
+
+# Docs (not needed at runtime)
+# Keep docs/AWTRIX-API.md out of image
+docs/
+
+# Project management
++pm/
+scripts/create-backlog-item.sh
+scripts/lib/

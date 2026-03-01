@@ -1,99 +1,111 @@
 # pidicon-light
 
-**Minimalist pixel display controller** - Config-file driven, no Web UI, just render.
+Minimalist pixel display controller for AWTRIX/Ulanzi 32x8 LED matrices. Config-file driven, no Web UI.
 
-[![GitHub](https://img.shields.io/github/repo-size/markus-barta/pidicon-light)](https://github.com/markus-barta/pidicon-light)
-[![License](https://img.shields.io/github/license/markus-barta/pidicon-light)](LICENSE)
+## Features
 
-## Vision
-
-pidicon-light strips away the complexity of pidicon (3.2.1, 196 tests, Web UI, MQTT, scene manager) and focuses on one thing:
-
-> **Read a config file -> Render scenes on pixel displays**
-
-That it. No Web UI, no MQTT, no scheduling. Just a simple render loop.
-
-## Why
-
-pidicon became too big for its purpose. Great idea, but maintenance overhead exceeds net-worth. pidicon-light is back-to-basics:
-
-- Config-file driven (no Web UI)
-- Simple render loop
-- Target: Ulanzi/AWTRIX first, then Pixoo
-- Minimal dependencies
-- Easy to maintain
+- **Config-driven**: JSON configuration, version-controlled and testable
+- **MQTT monitoring**: Health, state, and config topics
+- **Error handling**: Exponential backoff (1s→10min), circuit breaker (10 errors max)
+- **Hot reload**: Config file watcher for seamless updates
+- **Multi-device**: Support for multiple Ulanzi displays
+- **Docker ready**: Containerized deployment with health checks
 
 ## Quick Start
 
+### Local Development
+
 ```bash
-# Clone
-git clone https://github.com/markus-barta/pidicon-light.git
-cd pidicon-light
-
-# Install
 npm install
-
-# Create config
 cp config.example.json config.json
-# Edit config.json with your device IP
-
-# Run
 npm start
 ```
 
-## Config Example
+### Docker
+
+```bash
+docker build -t pidicon-light:latest .
+docker run -d --name pidicon-light --network host \
+  -e MQTT_PASS=<password> \
+  -v ./config.json:/data/config.json:ro \
+  pidicon-light:latest
+```
+
+## Configuration
+
+### config.json
 
 ```json
 {
   "devices": [
     {
-      "name": "ulanzi-01",
+      "name": "ulanzi-56",
       "type": "ulanzi",
-      "ip": "192.168.1.xxx",
-      "scenes": ["clock", "weather"]
+      "ip": "192.168.1.56",
+      "scenes": ["clock", "test-pattern"]
     }
   ],
   "scenes": {
-    "clock": {
-      "path": "./scenes/clock.js",
-      "interval": 5000
-    },
-    "weather": {
-      "path": "./scenes/weather.js",
-      "interval": 10000
-    }
+    "clock": { "path": "./scenes/clock.js" },
+    "test-pattern": { "path": "./scenes/test-pattern.js" }
   }
 }
 ```
 
-## Scene Example
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MQTT_HOST` | localhost | MQTT broker |
+| `MQTT_PORT` | 1883 | MQTT port |
+| `MQTT_USER` | smarthome | MQTT user |
+| `MQTT_PASS` | - | MQTT password (required) |
+| `LOG_LEVEL` | info | error/warn/info/debug |
+| `TZ` | Europe/Vienna | Timezone |
+
+## MQTT Topics
+
+- `home/hsb1/pidicon-light/health` - Health status (retained)
+- `home/hsb1/pidicon-light/state` - Running state (retained)
+- `home/hsb1/pidicon-light/config` - Config info (retained)
+
+## Creating Scenes
 
 ```javascript
-// scenes/clock.js
 export default {
-  name: clock,
-  
+  name: 'my-scene',
   async render(device) {
-    const now = new Date();
-    const time = now.toLocaleTimeString();
-    
-    // Draw on device (32x8 matrix)
-    await device.clear();
-    // TODO: device.drawText(time, 0, 0);
-    
+    await device.drawCustom({
+      text: 'Hello',
+      color: '#00FF00',
+      center: true,
+    });
     return 1000; // Update every second
   }
 };
 ```
 
-## Target Devices
+### Device API
 
-1. **Ulanzi / AWTRIX** (32x8, HTTP API) - Priority 1
-2. **Divoom Pixoo** (64x64, HTTP API) - Priority 2
+- `drawCustom(appData)` - Draw with AWTRIX API
+- `clear()` - Clear display
+- `setPower(on/off)` - Power control
+- `setBrightness(0-255)` - Brightness
+- `getStats()` - Device stats
+- `switchToApp(name)` - Switch to built-in app
 
-## Deployment
+See `docs/AWTRIX-API.md` for full API.
 
-### Docker on hsb1
+## Deployment on hsb1
+
+### 1. Secrets (agenix)
+
+```bash
+# /home/mba/secrets/pidicon-light.env
+MQTT_PASS=<password>
+```
+
+### 2. docker-compose.yml
 
 ```yaml
 pidicon-light:
@@ -101,45 +113,35 @@ pidicon-light:
   container_name: pidicon-light
   network_mode: host
   restart: unless-stopped
+  environment:
+    - TZ=Europe/Vienna
+    - MQTT_HOST=localhost
+    - MQTT_USER=smarthome
+  env_file:
+    - /home/mba/secrets/pidicon-light.env
   volumes:
-    - ./config.json:/data/config.json:ro
-    - ./scenes:/data/scenes:ro
+    - ./mounts/pidicon-light/data:/data
+  labels:
+    - "com.centurylinklabs.watchtower.enable=true"
+    - "com.centurylinklabs.watchtower.scope=weekly"
 ```
 
-See [DEVGUIDE.md](DEVGUIDE.md) for full deployment instructions.
-
-## Development
+### 3. Deploy
 
 ```bash
-# Enter dev environment (direnv auto-loads)
-devenv shell
-
-# Run in dev mode
-npm run dev
-
-# Create backlog item
-./scripts/create-backlog-item.sh P50 add-feature
-
-# Build + push Docker image
-./scripts/build-and-push.sh v0.1.0
+ssh mba@hsb1.lan
+mkdir -p ~/docker/mounts/pidicon-light
+# Copy config.json and scenes/
+cd ~/docker && docker compose up -d pidicon-light
+docker logs -f pidicon-light
 ```
 
-## Documentation
+## Error Handling
 
-- [DEVGUIDE.md](DEVGUIDE.md) - Complete development guide
-- [AGENTS.md](AGENTS.md) - Agent protocol and guidelines
-
-## Scripts
-
-| Script | Description |
-|--------|-------------|
-| `scripts/create-backlog-item.sh` | Create backlog item with unique hash |
-| `scripts/build-and-push.sh` | Build and push Docker image to GHCR |
+- Backoff: 1s → 2s → 4s → ... → 10min
+- Circuit breaker: 10 errors max
+- Status: ok → degraded → failed
 
 ## License
 
-AGPL-3.0 - See [LICENSE](LICENSE)
-
----
-
-**Made with less code, more focus**
+AGPL-3.0 | Markus Barta
