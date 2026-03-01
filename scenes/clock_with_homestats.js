@@ -36,8 +36,9 @@
  * z2m/wz/contact/te-door                                                        → {contact: bool}
  * z2m/vk/contact/w13                                                            → {contact: bool}
  * z2m/vr/contact/w14                                                            → {contact: bool}
- * homeassistant/sensor/sonnenbatterie_260365_state_battery_percentage_user/state → "0"–"100"
- * homeassistant/sensor/sonnenbatterie_260365_state_sonnenbatterie/state          → string
+ * Sonnenbatterie: polled directly via API every 3s (not MQTT — HA publishes too slowly)
+ *   http://$SONNEN_HOST/api/v2/status  Auth-Token: $SONNEN_API_TOKEN
+ *   Fields used: BatteryCharging (bool), BatteryDischarging (bool), USOC (0–100)
  *
  * ── Draw layout ─────────────────────────────────────────────────────────────
  * Day:   x1  time HH:MM:SS
@@ -186,21 +187,9 @@ export default {
       this._state.w14Open = parseOpen(msg);
     });
 
-    context.mqtt.subscribe(
-      "homeassistant/sensor/sonnenbatterie_260365_state_battery_percentage_user/state",
-      (msg) => {
-        const pct = parseFloat(msg);
-        this._state.batteryPct = isNaN(pct)
-          ? null
-          : Math.max(0, Math.min(100, pct));
-      },
-    );
-    context.mqtt.subscribe(
-      "homeassistant/sensor/sonnenbatterie_260365_state_sonnenbatterie/state",
-      (msg) => {
-        this._state.batteryState = msg.trim();
-      },
-    );
+    // --- Sonnenbatterie API poll (every 3s, direct — faster than HA MQTT) ------
+    // Env vars injected via agenix: SONNEN_HOST, SONNEN_API_TOKEN
+    this._startSonnenPoll(context.logger);
 
     // --- Debug overrides ----------------------------------------------------
 
@@ -252,6 +241,7 @@ export default {
   // ---------------------------------------------------------------------------
   async destroy(context) {
     context.mqtt.unsubscribeAll();
+    this._stopSonnenPoll();
   },
 
   // ---------------------------------------------------------------------------
@@ -346,6 +336,73 @@ export default {
   _openClosedColor(isOpen, C) {
     if (isOpen === null) return C.UNKNOWN;
     return isOpen ? C.OPEN : C.CLOSED;
+  },
+
+  /**
+   * Start polling sonnenbatterie API every 3s.
+   * Uses SONNEN_HOST + SONNEN_API_TOKEN from env (injected via agenix).
+   * Falls back gracefully if env vars not set (no crash, just null state).
+   */
+  _startSonnenPoll(logger) {
+    const host = process.env.SONNEN_HOST;
+    const token = process.env.SONNEN_API_TOKEN;
+
+    if (!host || !token) {
+      logger.warn(
+        "[clock_with_homestats] SONNEN_HOST / SONNEN_API_TOKEN not set — battery polling disabled",
+      );
+      return;
+    }
+
+    const url = `http://${host}/api/v2/status`;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(url, {
+          headers: { "Auth-Token": token },
+          signal: AbortSignal.timeout(2500), // 2.5s timeout — must finish before next poll
+        });
+
+        if (!res.ok) {
+          logger.warn(`[clock_with_homestats] Sonnen API HTTP ${res.status}`);
+          return;
+        }
+
+        const data = await res.json();
+
+        // USOC = user state of charge (0–100)
+        const pct = parseFloat(data.USOC);
+        this._state.batteryPct = isNaN(pct)
+          ? null
+          : Math.max(0, Math.min(100, pct));
+
+        // Derive state from boolean flags (more reliable than string status)
+        if (data.BatteryCharging === true)
+          this._state.batteryState = "charging";
+        else if (data.BatteryDischarging === true)
+          this._state.batteryState = "discharging";
+        else this._state.batteryState = "standby";
+      } catch (err) {
+        // Network error / timeout — keep last known values, don't crash
+        logger.warn(
+          `[clock_with_homestats] Sonnen API poll failed: ${err.message}`,
+        );
+      }
+    };
+
+    // Poll immediately on start, then every 3s
+    poll();
+    this._sonnenPollInterval = setInterval(poll, 3000);
+    logger.info(
+      `[clock_with_homestats] Sonnenbatterie polling started (${url}, every 3s)`,
+    );
+  },
+
+  _stopSonnenPoll() {
+    if (this._sonnenPollInterval) {
+      clearInterval(this._sonnenPollInterval);
+      this._sonnenPollInterval = null;
+    }
   },
 
   /**
