@@ -165,7 +165,7 @@ async function reloadConfig(newConfigContent) {
     const newConfig = loader.parse(newConfigContent);
 
     await stopAllDevices();
-    sceneLoader.clearCache(); // Force scenes to re-import from disk
+    await sceneLoader.clearCache(); // destroy() hooks + re-import from disk
 
     for (const device of newConfig.devices) {
       await startDevice(device);
@@ -223,7 +223,10 @@ async function main() {
   // SceneLoader resolves paths relative to config file's directory
   // so ./scenes/clock.js works both locally and in /data volume
   const configDir = dirname(configPath);
-  sceneLoader = new SceneLoader(configDir, config.scenes, { logger });
+  sceneLoader = new SceneLoader(configDir, config.scenes, {
+    logger,
+    mqttService,
+  });
 
   for (const device of config.devices) {
     await startDevice(device);
