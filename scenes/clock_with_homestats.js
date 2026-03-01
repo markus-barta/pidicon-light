@@ -431,15 +431,16 @@ export default {
     const isCharging = state === "charging";
     const isDischarging = state === "discharging";
 
+    // All colors follow charging state: green when charging, red when discharging/standby
     let fillColor, dimColor, nubDimColor;
     if (isDay) {
       fillColor = isCharging ? [0, 255, 0] : [255, 0, 0];
       dimColor = isCharging ? [0, 30, 0] : [30, 0, 0];
-      nubDimColor = dimColor;
+      nubDimColor = dimColor; // day: nub dim same as body dim
     } else {
       fillColor = isCharging ? [0, 60, 0] : [60, 0, 0];
-      dimColor = [20, 0, 0];
-      nubDimColor = [40, 0, 0]; // more visible than body dim — nub outline always findable
+      dimColor = isCharging ? [0, 20, 0] : [20, 0, 0]; // body dim, night
+      nubDimColor = isCharging ? [0, 40, 0] : [40, 0, 0]; // nub slightly brighter so outline visible
     }
 
     const filledPx =
