@@ -291,7 +291,7 @@ export default {
           minute: "2-digit",
           hour12: false,
         });
-    const timeX = isDay ? 0 : 6;
+    const timeX = isDay ? 0 : 5;
 
     // Sensor colors
     const nukiColor = this._nukiColor(C);
