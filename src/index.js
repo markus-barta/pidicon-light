@@ -125,6 +125,17 @@ async function startDevice(device) {
 
   renderLoops.push({ device, loop });
 
+  // Subscribe to per-device mode control topic (retained — survives restarts)
+  if (mqttService) {
+    const modeTopic = `${mqttService.baseTopic}/${device.name}/mode`;
+    mqttService.subscribeDevice(device.name, modeTopic, (msg) => {
+      const mode = msg.trim().toLowerCase();
+      if (["play", "pause", "stop"].includes(mode)) {
+        loop.setMode(mode);
+      }
+    });
+  }
+
   // start() runs forever; errors are caught inside the loop with backoff.
   // The only way it ever rejects is a truly unexpected throw — log and update MQTT.
   loop.start().catch((err) => {
@@ -145,7 +156,10 @@ async function stopAllDevices() {
   logger.info(`[pidicon-light] Stopping ${renderLoops.length} device(s)...`);
   for (const { loop, device } of renderLoops) {
     loop.stop();
-    if (mqttService) mqttService.updateDeviceStatus(device.name, "offline");
+    if (mqttService) {
+      mqttService.unsubscribeDevice(device.name);
+      mqttService.updateDeviceStatus(device.name, "offline");
+    }
   }
   renderLoops = [];
 }

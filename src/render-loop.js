@@ -47,6 +47,10 @@ export class RenderLoop {
     this.frameCount = 0;
     this.currentScene = null;
     this.lastSuccessTime = null;
+
+    // Mode control
+    this._mode = "play";      // "play" | "pause" | "stop"
+    this._modeChanged = null; // Promise resolve fn for wake-up
   }
 
   // ---------------------------------------------------------------------------
@@ -88,6 +92,59 @@ export class RenderLoop {
     this.logger.info(
       `[RenderLoop:${this.deviceName}] Stop requested (frames rendered: ${this.frameCount})`,
     );
+    // Wake any mode-wait so the loop can exit cleanly
+    if (this._modeChanged) {
+      this._modeChanged();
+      this._modeChanged = null;
+    }
+  }
+
+  /**
+   * Change the render mode at runtime.
+   * @param {"play"|"pause"|"stop"} mode
+   */
+  setMode(mode) {
+    const prev = this._mode;
+    this._mode = mode;
+    this.logger.info(
+      `[RenderLoop:${this.deviceName}] Mode: ${prev} → ${mode}`,
+    );
+    if (this._modeChanged) {
+      this._modeChanged();
+      this._modeChanged = null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+
+  /** Returns a promise that resolves on the next setMode() or stop() call. */
+  _waitForModeChange() {
+    return new Promise((resolve) => {
+      this._modeChanged = resolve;
+    });
+  }
+
+  async _applyStop() {
+    try {
+      await this.driver.clear();
+      if (typeof this.driver.push === "function") await this.driver.push();
+      if (typeof this.driver.setPower === "function")
+        await this.driver.setPower(false);
+    } catch (err) {
+      this.logger.warn(
+        `[RenderLoop:${this.deviceName}] stop: clear failed: ${err.message}`,
+      );
+    }
+  }
+
+  async _applyPlay() {
+    try {
+      await this.driver.initialize();
+    } catch (err) {
+      this.logger.warn(
+        `[RenderLoop:${this.deviceName}] play: re-init failed: ${err.message}`,
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -123,6 +180,14 @@ export class RenderLoop {
     do {
       if (!this.running) break;
 
+      // --- Mode: stop -------------------------------------------------------
+      if (this._mode === "stop") {
+        await this._applyStop();
+        await this._waitForModeChange();
+        if (this._mode === "play") await this._applyPlay();
+        break; // restart outer scene loop
+      }
+
       try {
         result = await scene.render(this.driver);
 
@@ -131,6 +196,13 @@ export class RenderLoop {
 
         if (typeof result === "number" && result > 0) {
           await this._sleep(result);
+        }
+
+        // --- Mode: pause — rendered once, now freeze ----------------------
+        if (this._mode === "pause") {
+          await this._waitForModeChange();
+          if (this._mode === "play") await this._applyPlay();
+          break; // restart outer scene loop → re-render on play
         }
       } catch (renderError) {
         this._handleError(renderError, `rendering scene "${sceneName}"`);
@@ -198,6 +270,7 @@ export class RenderLoop {
   getStatus() {
     return {
       running: this.running,
+      mode: this._mode,
       currentScene: this.currentScene,
       frameCount: this.frameCount,
       consecutiveErrors: this.consecutiveErrors,
