@@ -136,11 +136,6 @@ export default {
         this._state.batteryState = msg.trim();
       },
     );
-
-    // Wait for retained messages to arrive before first render.
-    // MQTT retained messages are delivered asynchronously after subscribe —
-    // without this delay the first ~500ms of renders see null state → blue.
-    await new Promise((resolve) => setTimeout(resolve, 1000));
   },
 
   // ---------------------------------------------------------------------------
@@ -260,23 +255,18 @@ export default {
     const isCharging = state === "charging";
     const isDischarging = state === "discharging";
 
-    // Fill color based on charge direction; default red if unknown (safe fallback)
+    // Use day/night palette directly — consistent with rest of scene
+    // charging=green, discharging=red, unknown=red (safe default)
+    const isNight = this._lastMode === "night";
     let color;
     if (isCharging)
-      color = [0, 255, 0]; // green
+      color = isNight ? [0, 70, 0] : [0, 255, 0]; // green
     else if (isDischarging)
-      color = [255, 0, 0]; // red
-    else color = [255, 0, 0]; // default red until state arrives
+      color = isNight ? [70, 0, 0] : [255, 0, 0]; // red
+    else color = isNight ? [70, 0, 0] : [255, 0, 0]; // red default
 
-    // Night dimming — reuse night palette ratio
-    if (this._lastMode === "night") {
-      color = color.map((v) => Math.round(v * 0.28));
-    }
-
-    // Unfilled pixels: dim but visible (min 20 on active channel)
-    const dimColor = color.map((v) =>
-      v > 0 ? Math.max(20, Math.round(v * 0.15)) : 0,
-    );
+    // Unfilled pixels: clearly dim but visible
+    const dimColor = isNight ? [15, 0, 0] : [40, 0, 0];
 
     // How many pixels to fill (bottom→top, left→right)
     const filledPx =
