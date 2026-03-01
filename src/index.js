@@ -164,6 +164,13 @@ async function reloadConfig(newConfigContent) {
     await stopAllDevices();
     await sceneLoader.clearCache(); // destroy() hooks + re-import from disk
 
+    // Re-create SceneLoader with new config's scenes map
+    const configDir = dirname(configPath);
+    sceneLoader = new SceneLoader(configDir, newConfig.scenes, {
+      logger,
+      mqttService,
+    });
+
     for (const device of newConfig.devices) {
       await startDevice(device);
     }
