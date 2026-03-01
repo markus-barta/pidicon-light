@@ -155,8 +155,9 @@ export default {
     const w13Color = this._openClosedColor(this._state.w13Open, C);
     const w14Color = this._openClosedColor(this._state.w14Open, C);
 
-    // Terrace: left segment shifts 1px right when open to show gap
-    const tx = this._state.terraceOpen ? 1 : 0;
+    // Terrace sliding door: left segment shifts 1px right when CLOSED to show gap
+    // (matches Node-RED original: open=no gap, closed=gap between segments)
+    const tx = this._state.terraceOpen ? 0 : 1;
 
     await device.drawCustom({
       draw: [
