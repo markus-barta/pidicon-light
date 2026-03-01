@@ -86,6 +86,7 @@ export default {
       w13Open: null, // bool: true = open
       w14Open: null, // bool: true = open
       batteryPct: null, // number 0–100, null = unknown
+      batteryState: null, // "charging" | "discharging" | "standby" | null
     };
     this._lastMode = null;
     this._lastBriSet = 0;
@@ -122,6 +123,14 @@ export default {
         this._state.batteryPct = isNaN(pct)
           ? null
           : Math.max(0, Math.min(100, pct));
+      },
+    );
+
+    // Sonnenbatterie state: "charging" | "discharging" | "standby"
+    context.mqtt.subscribe(
+      "homeassistant/sensor/sonnenbatterie_260365_state_sonnenbatterie/state",
+      (msg) => {
+        this._state.batteryState = msg.trim();
       },
     );
   },
@@ -215,56 +224,73 @@ export default {
   },
 
   /**
-   * Build draw commands for the battery icon at x29–31.
+   * Battery icon at x29–31, rows 0–7.
    *
-   * Layout (3 cols wide, rows 0–7):
-   *   row 0 : empty (top cap)
-   *   rows 1–6 : fill area (6 rows × 3 cols = 18 pixels = 100%)
-   *   row 7 : empty (bottom base)
+   * Shape:
+   *   Charging:   nub at top center (x30, y0), body rows 1–6
+   *   Discharging: nub at bottom center (x30, y7), body rows 1–6
+   *   Standby/unknown: no nub
    *
-   * Fill direction: bottom-up (row 6 first, row 1 last).
-   * Color: green >50%, yellow 20–50%, red ≤20%, blue = unknown.
+   * Fill: always bottom→top (row 6 first), left→right within row.
+   * 18 pixels total (3 cols × 6 rows) = 100%.
+   *
+   * Color: charging=green, discharging=red, standby/unknown=dim blue.
+   * Unfilled pixels: very dim version of fill color.
    *
    * @returns {Array} AWTRIX draw command objects
    */
   _batteryDraw(C) {
     const TOTAL_ROWS = 6; // rows 1–6
+    const TOTAL_PX = TOTAL_ROWS * 3; // 18 = 100%
     const X_START = 29;
     const X_END = 31;
-
-    // Unknown state — draw outline only in dim blue
-    if (this._state.batteryPct === null) {
-      const cmds = [];
-      for (let row = 1; row <= 6; row++) {
-        cmds.push({ dl: [X_START, row, X_END, row, [0, 0, 40]] });
-      }
-      return cmds;
-    }
+    const X_NUB = 30; // center col for nub pixel
 
     const pct = this._state.batteryPct;
+    const state = this._state.batteryState;
 
-    // How many rows to fill (round, at least 1 if pct > 0)
-    const filledRows =
-      pct === 0 ? 0 : Math.max(1, Math.round((pct / 100) * TOTAL_ROWS));
+    const isCharging = state === "charging";
+    const isDischarging = state === "discharging";
 
-    // Color based on charge level
+    // Fill color based on charge direction
     let color;
-    if (pct > 50)
-      color = C.NUKI_UNLOCKED; // green
-    else if (pct > 20)
-      color = C.NUKI_TRANSITIONING; // yellow
-    else color = C.NUKI_LOCKED; // red
+    if (isCharging)
+      color = [0, 255, 0]; // green
+    else if (isDischarging)
+      color = [255, 0, 0]; // red
+    else color = [0, 0, 80]; // dim blue (standby/unknown)
 
-    const dimColor = color.map((v) => Math.max(0, Math.round(v * 0.15))); // empty rows very dim
-
-    const cmds = [];
-    for (let row = 1; row <= TOTAL_ROWS; row++) {
-      // Fill from bottom: row 6 = first to fill
-      const isFilled = row > TOTAL_ROWS - filledRows;
-      cmds.push({
-        dl: [X_START, row, X_END, row, isFilled ? color : dimColor],
-      });
+    // Night dimming — reuse night palette ratio
+    if (this._lastMode === "night") {
+      color = color.map((v) => Math.round(v * 0.28));
     }
+
+    const dimColor = color.map((v) => Math.max(0, Math.round(v * 0.15)));
+
+    // How many pixels to fill (bottom→top, left→right)
+    const filledPx =
+      pct === null
+        ? 0
+        : pct === 0
+          ? 0
+          : Math.max(1, Math.round((pct / 100) * TOTAL_PX));
+
+    // Build pixel list: row 6 col 29,30,31 → row 5 → … → row 1 col 31
+    const pixels = [];
+    for (let row = TOTAL_ROWS; row >= 1; row--) {
+      for (let x = X_START; x <= X_END; x++) {
+        pixels.push({ x, y: row });
+      }
+    }
+
+    const cmds = pixels.map((px, i) => ({
+      dp: [px.x, px.y, i < filledPx ? color : dimColor],
+    }));
+
+    // Nub pixel
+    if (isCharging) cmds.push({ dp: [X_NUB, 0, color] }); // top
+    if (isDischarging) cmds.push({ dp: [X_NUB, 7, color] }); // bottom
+
     return cmds;
   },
 };
