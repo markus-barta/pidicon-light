@@ -45,10 +45,10 @@ const DAY = {
   NUKI_UNLOCKED: [0, 255, 0], // Green  — unlocked = open
   NUKI_LOCKED: [255, 0, 0], // Red    — locked = closed
   NUKI_TRANSITIONING: [255, 255, 0], // Yellow — locking/unlocking
-  NUKI_ERROR: [0, 0, 255], // Blue   — jammed/unknown/error
+  NUKI_ERROR: [0, 0, 255], // Blue   — jammed/error
   OPEN: [0, 255, 0], // Green  — open
   CLOSED: [255, 0, 0], // Red    — closed
-  UNKNOWN: [0, 0, 255], // Blue   — no data
+  UNKNOWN: [255, 255, 0], // Yellow — sensor offline (not blue, yellow = caution)
   TIME: [255, 255, 213], // Warm white
   BRI: 20,
 };
@@ -60,7 +60,7 @@ const NIGHT = {
   NUKI_ERROR: [0, 0, 70], // Dim blue
   OPEN: [0, 70, 0], // Dim green
   CLOSED: [70, 0, 0], // Dim red
-  UNKNOWN: [0, 0, 70], // Dim blue
+  UNKNOWN: [70, 70, 0], // Dim yellow
   TIME: [50, 30, 30], // Very dim
   BRI: 5,
 };
@@ -80,13 +80,16 @@ export default {
   async init(context) {
     // Initialise state on the module object — shared across render() calls.
     // Must be done here (not at module level) so config-reload resets cleanly.
+    // null = "not yet received". After init() the 1s settle delay ensures
+    // retained messages have arrived before first render(). Values are then
+    // kept forever (last-known) — sensors only publish on change.
     this._state = {
-      nukiState: null, // string from HA
-      terraceOpen: null, // bool: true = open
-      w13Open: null, // bool: true = open
-      w14Open: null, // bool: true = open
-      batteryPct: null, // number 0–100, null = unknown
-      batteryState: null, // "charging" | "discharging" | "standby" | null
+      nukiState: null,
+      terraceOpen: null,
+      w13Open: null,
+      w14Open: null,
+      batteryPct: null,
+      batteryState: null,
     };
     this._lastMode = null;
     this._lastBriSet = 0;
@@ -133,6 +136,11 @@ export default {
         this._state.batteryState = msg.trim();
       },
     );
+
+    // Wait for retained messages to arrive before first render.
+    // MQTT retained messages are delivered asynchronously after subscribe —
+    // without this delay the first ~500ms of renders see null state → blue.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   },
 
   // ---------------------------------------------------------------------------
@@ -252,20 +260,23 @@ export default {
     const isCharging = state === "charging";
     const isDischarging = state === "discharging";
 
-    // Fill color based on charge direction
+    // Fill color based on charge direction; default red if unknown (safe fallback)
     let color;
     if (isCharging)
       color = [0, 255, 0]; // green
     else if (isDischarging)
       color = [255, 0, 0]; // red
-    else color = [0, 0, 80]; // dim blue (standby/unknown)
+    else color = [255, 0, 0]; // default red until state arrives
 
     // Night dimming — reuse night palette ratio
     if (this._lastMode === "night") {
       color = color.map((v) => Math.round(v * 0.28));
     }
 
-    const dimColor = color.map((v) => Math.max(0, Math.round(v * 0.15)));
+    // Unfilled pixels: dim but visible (min 20 on active channel)
+    const dimColor = color.map((v) =>
+      v > 0 ? Math.max(20, Math.round(v * 0.15)) : 0,
+    );
 
     // How many pixels to fill (bottom→top, left→right)
     const filledPx =
@@ -275,19 +286,32 @@ export default {
           ? 0
           : Math.max(1, Math.round((pct / 100) * TOTAL_PX));
 
-    // Build pixel list: row 6 col 29,30,31 → row 5 → … → row 1 col 31
-    const pixels = [];
+    // Draw row by row (bottom→top). Each row is a full 3-pixel horizontal line.
+    // Track how many pixels filled so far to handle partial rows correctly.
+    const cmds = [];
+    let filled = 0;
+
     for (let row = TOTAL_ROWS; row >= 1; row--) {
-      for (let x = X_START; x <= X_END; x++) {
-        pixels.push({ x, y: row });
+      // Pixels remaining to fill in this row
+      const rowFilled = Math.min(3, Math.max(0, filledPx - filled));
+      const rowEmpty = 3 - rowFilled;
+
+      if (rowFilled === 3) {
+        // Full row filled — single line command
+        cmds.push({ dl: [X_START, row, X_END, row, color] });
+      } else if (rowFilled === 0) {
+        // Full row empty
+        cmds.push({ dl: [X_START, row, X_END, row, dimColor] });
+      } else {
+        // Partial row: filled pixels on left, empty on right
+        cmds.push({ dl: [X_START, row, X_START + rowFilled - 1, row, color] });
+        cmds.push({ dl: [X_START + rowFilled, row, X_END, row, dimColor] });
       }
+
+      filled += rowFilled + rowEmpty; // always advance by 3
     }
 
-    const cmds = pixels.map((px, i) => ({
-      dp: [px.x, px.y, i < filledPx ? color : dimColor],
-    }));
-
-    // Nub pixel
+    // Nub pixel (single dp — just 1 command, safe)
     if (isCharging) cmds.push({ dp: [X_NUB, 0, color] }); // top
     if (isDischarging) cmds.push({ dp: [X_NUB, 7, color] }); // bottom
 
