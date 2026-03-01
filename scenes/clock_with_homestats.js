@@ -436,8 +436,8 @@ export default {
       fillColor = isCharging ? [0, 255, 0] : [255, 0, 0];
       dimColor = isCharging ? [0, 30, 0] : [30, 0, 0];
     } else {
-      fillColor = isCharging ? [0, 25, 0] : [25, 0, 0];
-      dimColor = [8, 0, 0];
+      fillColor = isCharging ? [0, 60, 0] : [60, 0, 0];
+      dimColor = [20, 0, 0];
     }
 
     const filledPx =
