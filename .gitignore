@@ -1,6 +1,11 @@
 # Dependencies
 node_modules/
 
+# Nix / devenv (generated, machine-specific)
+.devenv/
+.devenv.flake.nix
+.direnv/
+
 # Environment
 .env
 .env.local
