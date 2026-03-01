@@ -61,6 +61,38 @@ mosquitto_pub -h 192.168.1.101 -u smarthome -P PASS \
 
 ---
 
+## Device Mode Control
+
+Per-device render loop control. Topic is **retained** — state survives restarts.
+
+`home/hsb1/pidicon-light/<device>/mode`
+
+| Payload | Behaviour |
+| ------- | --------- |
+| `play`  | Normal render loop (default) |
+| `pause` | Render one frame, freeze. Resume on `play`. |
+| `stop`  | Push black frame; Ulanzi: `setPower(false)`. Resume via `play` → re-initialises driver. |
+
+```bash
+# Pause pixoo (freeze last frame)
+mosquitto_pub -h 192.168.1.101 -u smarthome -P PASS \
+  -t 'home/hsb1/pidicon-light/pixoo-159/mode' -m 'pause' -r
+
+# Stop ulanzi (black screen + power off)
+mosquitto_pub -h 192.168.1.101 -u smarthome -P PASS \
+  -t 'home/hsb1/pidicon-light/ulanzi-56/mode' -m 'stop' -r
+
+# Resume any device
+mosquitto_pub -h 192.168.1.101 -u smarthome -P PASS \
+  -t 'home/hsb1/pidicon-light/ulanzi-56/mode' -m 'play' -r
+
+# Clear retained (revert to play on next restart)
+mosquitto_pub -h 192.168.1.101 -u smarthome -P PASS \
+  -t 'home/hsb1/pidicon-light/ulanzi-56/mode' -m '' -r
+```
+
+---
+
 ## Debug Override Topics
 
 Global (not device/scene scoped — temporary testing only).  
