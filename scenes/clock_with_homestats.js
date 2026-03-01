@@ -24,6 +24,7 @@
  * pidicon-light/<device>/<scene>/settings/night_start_hour default: 19
  * pidicon-light/<device>/<scene>/settings/bri_day          default: 20
  * pidicon-light/<device>/<scene>/settings/bri_night        default: 8
+ * pidicon-light/<device>/<scene>/settings/show_seconds     default: true  ("false" → HH:MM + x5 offset)
  *
  * ── Debug override topics (global, retained, cleared with empty payload) ────
  * pidicon-light/debug/mode_override    "day" | "night" | ""
@@ -106,6 +107,7 @@ export default {
       nightStartHour: 19,
       briDay: 20,
       briNight: 8,
+      showSeconds: true, // false → HH:MM always (same offset as night mode)
     };
 
     // Debug overrides — null = not active
@@ -161,6 +163,19 @@ export default {
         this._lastBriSet = 0;
         context.logger.info(`[${this.name}] bri_night = ${v}`);
       }
+    });
+
+    // show_seconds: "true" | "false" | "" (clear → revert to default true)
+    context.mqtt.subscribe(`${S}/show_seconds`, (msg) => {
+      const v = msg.trim().toLowerCase();
+      if (v === "" || v === "null") {
+        this._settings.showSeconds = true; // reset to default
+      } else {
+        this._settings.showSeconds = v !== "false";
+      }
+      context.logger.info(
+        `[${this.name}] show_seconds = ${this._settings.showSeconds}`,
+      );
     });
 
     // --- Sensor topics ------------------------------------------------------
@@ -277,21 +292,17 @@ export default {
 
     // Time
     const now = new Date();
-    const timeStr = isDay
-      ? now.toLocaleTimeString("de-AT", {
-          timeZone: "Europe/Vienna",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        })
-      : now.toLocaleTimeString("de-AT", {
-          timeZone: "Europe/Vienna",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        });
-    const timeX = isDay ? 0 : 5;
+    // Night always hides seconds; day respects show_seconds setting
+    const withSeconds = isDay && this._settings.showSeconds;
+    const timeStr = now.toLocaleTimeString("de-AT", {
+      timeZone: "Europe/Vienna",
+      hour: "2-digit",
+      minute: "2-digit",
+      ...(withSeconds ? { second: "2-digit" } : {}),
+      hour12: false,
+    });
+    // Shorter text (HH:MM) shifted right to roughly center on display
+    const timeX = withSeconds ? 0 : 5;
 
     // Sensor colors
     const nukiColor = this._nukiColor(C);

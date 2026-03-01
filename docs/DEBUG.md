@@ -13,12 +13,13 @@ Device+scene scoped: `pidicon-light/<device>/<scene>/settings/<key>`
 
 For the kids bedroom display:
 
-| Topic                                                                    | Default | Range | Description              |
-| ------------------------------------------------------------------------ | ------- | ----- | ------------------------ |
-| `pidicon-light/ulanzi-56/clock_with_homestats/settings/day_start_hour`   | `7`     | 0–23  | Hour day mode begins     |
-| `pidicon-light/ulanzi-56/clock_with_homestats/settings/night_start_hour` | `19`    | 0–23  | Hour night mode begins   |
-| `pidicon-light/ulanzi-56/clock_with_homestats/settings/bri_day`          | `20`    | 1–255 | Brightness in day mode   |
-| `pidicon-light/ulanzi-56/clock_with_homestats/settings/bri_night`        | `8`     | 1–255 | Brightness in night mode |
+| Topic                                                                    | Default | Range          | Description                                   |
+| ------------------------------------------------------------------------ | ------- | -------------- | --------------------------------------------- |
+| `pidicon-light/ulanzi-56/clock_with_homestats/settings/day_start_hour`   | `7`     | 0–23           | Hour day mode begins                          |
+| `pidicon-light/ulanzi-56/clock_with_homestats/settings/night_start_hour` | `19`    | 0–23           | Hour night mode begins                        |
+| `pidicon-light/ulanzi-56/clock_with_homestats/settings/bri_day`          | `20`    | 1–255          | Brightness in day mode                        |
+| `pidicon-light/ulanzi-56/clock_with_homestats/settings/bri_night`        | `8`     | 1–255          | Brightness in night mode                      |
+| `pidicon-light/ulanzi-56/clock_with_homestats/settings/show_seconds`     | `true`  | `true`/`false` | Show seconds in day mode (night always HH:MM) |
 
 ### Settings curl commands
 
@@ -48,6 +49,14 @@ mosquitto_pub -h 192.168.1.101 -u smarthome -P PASS \
   -t 'pidicon-light/ulanzi-56/clock_with_homestats/settings/bri_day' -m '' -r
 mosquitto_pub -h 192.168.1.101 -u smarthome -P PASS \
   -t 'pidicon-light/ulanzi-56/clock_with_homestats/settings/bri_night' -m '' -r
+
+# Hide seconds in day mode (HH:MM only, shifted right like night mode)
+mosquitto_pub -h 192.168.1.101 -u smarthome -P PASS \
+  -t 'pidicon-light/ulanzi-56/clock_with_homestats/settings/show_seconds' -m 'false' -r
+
+# Re-enable seconds
+mosquitto_pub -h 192.168.1.101 -u smarthome -P PASS \
+  -t 'pidicon-light/ulanzi-56/clock_with_homestats/settings/show_seconds' -m 'true' -r
 ```
 
 ---
