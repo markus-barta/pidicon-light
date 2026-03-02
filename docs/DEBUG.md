@@ -155,6 +155,83 @@ done
 
 ---
 
+## Config Overlay
+
+Retained MQTT layer that patches the structural config without touching `config.json`.
+File is always the safe fallback. Overlay survives restarts. Cleared by empty payload `""`.
+
+**Merge priority:** `config.json` < blob overlay < granular overlay
+
+All topics are under `home/hsb1/pidicon-light/overlay/…`
+
+### Granular device topics
+
+`home/hsb1/pidicon-light/overlay/device/<name>/<field>`
+
+| Field     | Format            | Description                          |
+| --------- | ----------------- | ------------------------------------ |
+| `scenes`  | JSON array string | Override which scenes the device runs |
+| `ip`      | plain string      | Override device IP address            |
+| `enabled` | `"false"`         | Exclude device from effective config  |
+
+### Granular scene topics
+
+`home/hsb1/pidicon-light/overlay/scene/<key>/path`
+
+### Blob topic
+
+`home/hsb1/pidicon-light/overlay/blob` → full or partial config JSON
+
+Blob is applied before granular; granular wins. New devices via blob need `name`, `type`, `ip`.
+Granular topics cannot add new devices — only patch existing ones (from file or blob).
+
+### Observable result
+
+`home/hsb1/pidicon-light/config/effective` — full merged config (retained, published on every reload)
+
+```bash
+PASS=YOUR_PASS
+HOST=192.168.1.101
+BASE="home/hsb1/pidicon-light"
+
+# --- Granular examples ---
+
+# Override which scenes run on ulanzi-56
+mosquitto_pub -h $HOST -u smarthome -P $PASS \
+  -t "$BASE/overlay/device/ulanzi-56/scenes" -m '["clock"]' -r
+
+# Override IP of pixoo-159
+mosquitto_pub -h $HOST -u smarthome -P $PASS \
+  -t "$BASE/overlay/device/pixoo-159/ip" -m '192.168.1.200' -r
+
+# Disable ulanzi-56 (excluded from effective config)
+mosquitto_pub -h $HOST -u smarthome -P $PASS \
+  -t "$BASE/overlay/device/ulanzi-56/enabled" -m 'false' -r
+
+# Override a scene path
+mosquitto_pub -h $HOST -u smarthome -P $PASS \
+  -t "$BASE/overlay/scene/clock/path" -m './scenes/clock_v2.js' -r
+
+# --- Blob example (add new device) ---
+mosquitto_pub -h $HOST -u smarthome -P $PASS \
+  -t "$BASE/overlay/blob" \
+  -m '{"devices":[{"name":"ulanzi-new","type":"ulanzi","ip":"192.168.1.77","scenes":["clock"]}]}' -r
+
+# --- Clear individual overlays ---
+mosquitto_pub -h $HOST -u smarthome -P $PASS \
+  -t "$BASE/overlay/device/ulanzi-56/scenes" -m '' -r
+mosquitto_pub -h $HOST -u smarthome -P $PASS \
+  -t "$BASE/overlay/device/ulanzi-56/enabled" -m '' -r
+mosquitto_pub -h $HOST -u smarthome -P $PASS \
+  -t "$BASE/overlay/blob" -m '' -r
+
+# --- Read effective config ---
+mosquitto_sub -h $HOST -u smarthome -P $PASS \
+  -t "$BASE/config/effective" -C 1
+```
+
+---
+
 ## Night Mode Spec
 
 | Feature          | Day                    | Night                   |

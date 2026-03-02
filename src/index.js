@@ -10,6 +10,7 @@ import { UlanziDriver } from "../lib/ulanzi-driver.js";
 import { PixooDriver } from "../lib/pixoo-driver.js";
 import { MqttService } from "../lib/mqtt-service.js";
 import { ConfigWatcher } from "../lib/config-watcher.js";
+import { ConfigOverlay } from "../lib/config-overlay.js";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -48,7 +49,9 @@ let mqttService = null;
 let configWatcher = null;
 let renderLoops = []; // Array of { device, loop }
 let sceneLoader = null;
-let configPath = null; // Set once in main(), used in reloadConfig()
+let configPath = null;   // Set once in main(), used in reloadConfig()
+let configOverlay = null; // MQTT overlay layer (optional, null when MQTT unavailable)
+let baseConfig = null;   // Raw file config; overlay merges on top of this
 
 // ---------------------------------------------------------------------------
 
@@ -165,6 +168,39 @@ async function stopAllDevices() {
 }
 
 /**
+ * Called by ConfigOverlay when any overlay topic changes (debounced).
+ * Re-merges overlay with current baseConfig and restarts devices.
+ */
+async function applyOverlayReload() {
+  logger.info("[pidicon-light] Overlay changed, applying effective config...");
+  try {
+    const effectiveConfig = configOverlay.merge(baseConfig);
+
+    await stopAllDevices();
+    await sceneLoader.clearCache();
+
+    const configDir = dirname(configPath);
+    sceneLoader = new SceneLoader(configDir, effectiveConfig.scenes, {
+      logger,
+      mqttService,
+    });
+
+    for (const device of effectiveConfig.devices) {
+      await startDevice(device);
+    }
+
+    if (mqttService) mqttService.publishConfig(effectiveConfig);
+
+    logger.info("[pidicon-light] Overlay reload complete");
+  } catch (err) {
+    logger.error(
+      "[pidicon-light] Overlay reload failed — keeping previous state",
+      err,
+    );
+  }
+}
+
+/**
  * Hot-reload handler — called by ConfigWatcher with the raw file content.
  * Re-parses and validates before applying; errors leave the old config running.
  */
@@ -173,23 +209,27 @@ async function reloadConfig(newConfigContent) {
   try {
     // Validate before touching anything running
     const loader = new ConfigLoader(configPath);
-    const newConfig = loader.parse(newConfigContent);
+    baseConfig = loader.parse(newConfigContent); // update base for future merges
+
+    const effectiveConfig = configOverlay
+      ? configOverlay.merge(baseConfig)
+      : baseConfig;
 
     await stopAllDevices();
     await sceneLoader.clearCache(); // destroy() hooks + re-import from disk
 
-    // Re-create SceneLoader with new config's scenes map
+    // Re-create SceneLoader with effective config's scenes map
     const configDir = dirname(configPath);
-    sceneLoader = new SceneLoader(configDir, newConfig.scenes, {
+    sceneLoader = new SceneLoader(configDir, effectiveConfig.scenes, {
       logger,
       mqttService,
     });
 
-    for (const device of newConfig.devices) {
+    for (const device of effectiveConfig.devices) {
       await startDevice(device);
     }
 
-    if (mqttService) mqttService.publishConfig(newConfig);
+    if (mqttService) mqttService.publishConfig(effectiveConfig);
 
     logger.info("[pidicon-light] Config reloaded successfully");
   } catch (error) {
@@ -206,6 +246,7 @@ async function shutdown(signal) {
   );
 
   if (configWatcher) await configWatcher.stop();
+  if (configOverlay) configOverlay.unsubscribe();
 
   await stopAllDevices();
 
@@ -225,28 +266,46 @@ async function main() {
     process.env.PIDICON_CONFIG_PATH || join(__dirname, "../config.json");
 
   const configLoader = new ConfigLoader(configPath);
-  const config = await configLoader.load();
+  baseConfig = await configLoader.load();
   logger.info(
-    `[pidicon-light] Loaded config: ${config.devices.length} device(s), ${Object.keys(config.scenes).length} scene(s)`,
+    `[pidicon-light] Loaded config: ${baseConfig.devices.length} device(s), ${Object.keys(baseConfig.scenes).length} scene(s)`,
   );
 
   // MQTT — optional; failures are non-fatal
   mqttService = await initializeMqtt();
   if (mqttService) {
-    mqttService.publishConfig(config);
+    mqttService.publishConfig(baseConfig);
     mqttService.setRunning(true);
     mqttService.updateStatus("ok");
   }
 
+  // Bootstrap overlay — subscribe and wait for retained burst before starting devices.
+  // This ensures retained overlay topics are applied before the first render.
+  if (mqttService) {
+    configOverlay = new ConfigOverlay(
+      mqttService,
+      mqttService.baseTopic,
+      applyOverlayReload,
+      { logger },
+    );
+    await configOverlay.subscribe(); // 200ms settle, clears debounce
+  }
+
+  const effectiveConfig = configOverlay
+    ? configOverlay.merge(baseConfig)
+    : baseConfig;
+
+  if (mqttService) mqttService.publishConfig(effectiveConfig); // publish merged result
+
   // SceneLoader resolves paths relative to config file's directory
   // so ./scenes/clock.js works both locally and in /data volume
   const configDir = dirname(configPath);
-  sceneLoader = new SceneLoader(configDir, config.scenes, {
+  sceneLoader = new SceneLoader(configDir, effectiveConfig.scenes, {
     logger,
     mqttService,
   });
 
-  for (const device of config.devices) {
+  for (const device of effectiveConfig.devices) {
     await startDevice(device);
   }
 
