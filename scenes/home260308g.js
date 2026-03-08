@@ -259,7 +259,7 @@ async function drawPvCons(d, cx, cy, productionW, consumptionW) {
   // Consumption: dark-red → red → bright-red by kW tier
   const cons = consumptionW ?? 0;
   const consColor = cons < 500 ? [120, 20, 20] : cons <= 1000 ? [200, 40, 40] : [255, 60, 60];
-  await d.drawTextRgbaAligned(`↓${fmt(consumptionW)}`, [cx, cy + 2], consColor, "center");
+  await d.drawTextRgbaAligned(`↓${fmt(consumptionW)}`, [cx, cy + 1], consColor, "center");
 }
 
 // Temperature → perceptual color: blue (cold) → yellow (mid) → red (hot)
@@ -297,14 +297,14 @@ async function drawBoiler(d, cx, cy, boiler, frame) {
     await d.drawTextRgbaAligned("---", [cx, textY], C.dimWhite, "center");
   }
 
-  // Casing: 6×8, off-white, subtle outline (1px lower, 1px less tall)
+  // Casing: 6×9, off-white, subtle outline
   const casingX = cx - 3;
-  const casingY = cy + 1;
-  fillRect(d, casingX, casingY, 6, 8, 160, 160, 155);
+  const casingY = cy;
+  fillRect(d, casingX, casingY, 6, 9, 160, 160, 155);
   hLine(d, casingX, casingX + 5, casingY,     200, 200, 196);
-  hLine(d, casingX, casingX + 5, casingY + 7, 200, 200, 196);
-  vLine(d, casingX,     casingY, casingY + 7, 200, 200, 196);
-  vLine(d, casingX + 5, casingY, casingY + 7, 200, 200, 196);
+  hLine(d, casingX, casingX + 5, casingY + 8, 200, 200, 196);
+  vLine(d, casingX,     casingY, casingY + 8, 200, 200, 196);
+  vLine(d, casingX + 5, casingY, casingY + 8, 200, 200, 196);
 
   // 2×2 status LED, 2px lower (casingY+5)
   let lr, lg, lb;
@@ -330,13 +330,13 @@ const POWER_ON      = [  0, 200,  80];
 const POWER_STANDBY = [255, 155,   0];
 const POWER_OFF     = [ 35,  35,  35];
 
-// Syncbox line — 3px wide hLine below power dot.
-// isTarget: device is a syncbox input (PS5/PC only; TV has no line).
-// isActive: this device is the current syncbox input.
-function drawSyncboxLine(d, cx, dotY, isTarget, isActive) {
-  if (!isTarget) return;
-  const [r, g, b] = isActive ? [60, 140, 255] : [50, 50, 50];
-  hLine(d, cx - 1, cx + 1, dotY + 2, r, g, b);
+// Syncbox active ring — drawn 1px outside icon bounds
+function drawSyncboxRing(d, cx, cy, hw, hh) {
+  const [r, g, b] = C.syncRing;
+  hLine(d, cx - hw, cx + hw, cy - hh, r, g, b);
+  hLine(d, cx - hw, cx + hw, cy + hh, r, g, b);
+  vLine(d, cx - hw, cy - hh, cy + hh, r, g, b);
+  vLine(d, cx + hw, cy - hh, cy + hh, r, g, b);
 }
 
 // TV monitor: 15×9 wall-mounted (cx±7, cy-4..cy+4) — no stand
@@ -347,28 +347,30 @@ function drawTV(d, cx, cy, state) {
   hLine(d, cx - 7, cx + 7, cy + 4, r, g, b); // bottom
   vLine(d, cx - 7, cy - 4, cy + 4, r, g, b); // left
   vLine(d, cx + 7, cy - 4, cy + 4, r, g, b); // right
-  d._setPixel(cx, cy + 6, r, g, b); // power dot (1×1, centered)
+  fillRect(d, cx - 1, cy + 7, 2, 2, r, g, b); // power dot
 }
 
 // PS5 controller: tri-state off/sleep/on
-// Body: 7×5 outline (cx±3, cy±2) + grips (cx±4, cy+1..2) + touchpad dot
-function drawPS5(d, cx, cy, state) {
+// Body: 5×5 outline (cx±2, cy±2) + side grips at (cx±3, cy+1..cy+2) + center dot
+function drawPS5(d, cx, cy, state, syncboxActive) {
   const [r, g, b] = state === "on" ? POWER_ON : state === "sleep" ? POWER_STANDBY : POWER_OFF;
 
-  hLine(d, cx - 3, cx + 3, cy - 2, r, g, b); // top
-  hLine(d, cx - 3, cx + 3, cy + 2, r, g, b); // bottom
-  vLine(d, cx - 3, cy - 2, cy + 2, r, g, b); // left
-  vLine(d, cx + 3, cy - 2, cy + 2, r, g, b); // right
-  d._setPixel(cx - 4, cy + 1, r, g, b);       // left grip
-  d._setPixel(cx - 4, cy + 2, r, g, b);
-  d._setPixel(cx + 4, cy + 1, r, g, b);       // right grip
-  d._setPixel(cx + 4, cy + 2, r, g, b);
-  d._setPixel(cx, cy, r, g, b);               // touchpad dot
-  d._setPixel(cx, cy + 6, r, g, b);           // power dot (1×1, centered)
+  hLine(d, cx - 2, cx + 2, cy - 2, r, g, b); // top
+  hLine(d, cx - 2, cx + 2, cy + 2, r, g, b); // bottom
+  vLine(d, cx - 2, cy - 2, cy + 2, r, g, b); // left
+  vLine(d, cx + 2, cy - 2, cy + 2, r, g, b); // right
+  d._setPixel(cx - 3, cy + 1, r, g, b);
+  d._setPixel(cx - 3, cy + 2, r, g, b);
+  d._setPixel(cx + 3, cy + 1, r, g, b);
+  d._setPixel(cx + 3, cy + 2, r, g, b);
+  d._setPixel(cx, cy, r, g, b); // touchpad dot
+  fillRect(d, cx - 1, cy + 7, 2, 2, r, g, b); // power dot
+
+  if (syncboxActive && state !== "off") drawSyncboxRing(d, cx, cy, 4, 3);
 }
 
 // PC tower: 5×8 outline (cx±2, cy-4..cy+3) + disk slot line
-function drawPC(d, cx, cy, isOn) {
+function drawPC(d, cx, cy, isOn, syncboxActive) {
   const [r, g, b] = isOn ? POWER_ON : POWER_OFF;
 
   hLine(d, cx - 2, cx + 2, cy - 4, r, g, b); // top
@@ -376,7 +378,9 @@ function drawPC(d, cx, cy, isOn) {
   vLine(d, cx - 2, cy - 4, cy + 3, r, g, b); // left
   vLine(d, cx + 2, cy - 4, cy + 3, r, g, b); // right
   hLine(d, cx - 1, cx + 1, cy - 1, r, g, b); // disk slot detail
-  d._setPixel(cx, cy + 6, r, g, b);           // power dot (1×1, centered)
+  fillRect(d, cx - 1, cy + 7, 2, 2, r, g, b); // power dot
+
+  if (syncboxActive && isOn) drawSyncboxRing(d, cx, cy, 3, 5);
 }
 
 // ── Staleness / Nuki ping ──────────────────────────────────────────────────────
@@ -543,14 +547,9 @@ export default {
     const tvState  = (s.tvPower  ?? 0) < 2 ? "off" : (s.tvPower  ?? 0) < 26 ? "standby" : "on";
 
     // Col order: PS5 | TV | PC
-    const cy2 = ROWS[2].cy;
-    drawPS5(device, COLS[0].cx, cy2, ps5State);
-    drawTV (device, COLS[1].cx, cy2, tvState);
-    drawPC (device, COLS[2].cx, cy2, (s.pcPower ?? 0) > 10);
-    // Syncbox line below power dot (dot at cy2+6, line at cy2+8)
-    drawSyncboxLine(device, COLS[0].cx, cy2 + 6, true,  s.syncInput === "input4");
-    drawSyncboxLine(device, COLS[1].cx, cy2 + 6, false, false);
-    drawSyncboxLine(device, COLS[2].cx, cy2 + 6, true,  s.syncInput === "input2");
+    drawPS5(device, COLS[0].cx, ROWS[2].cy, ps5State,  s.syncInput === "input4");
+    drawTV (device, COLS[1].cx, ROWS[2].cy, tvState);
+    drawPC (device, COLS[2].cx, ROWS[2].cy, (s.pcPower  ?? 0) > 10, s.syncInput === "input2");
 
     if (isStale(s.ps5Seen)) drawErrorMark(device, 0, 2, this._frame);
     if (isStale(s.tvSeen))  drawErrorMark(device, 1, 2, this._frame);
