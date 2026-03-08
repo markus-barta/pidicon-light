@@ -262,10 +262,8 @@ function drawSyncboxRing(d, cx, cy, hw, hh) {
 }
 
 // TV monitor: 15×9 wall-mounted (cx±7, cy-4..cy+4) — no stand
-// tri-state: off <2W / standby 2-20W / on >20W
-function drawTV(d, cx, cy, state) {
-  const factor = state === "on" ? 1.0 : state === "standby" ? 0.35 : 0.10;
-  const [r, g, b] = _dimColor(C.tvColor, factor);
+function drawTV(d, cx, cy, isOn) {
+  const [r, g, b] = _dimColor(C.tvColor, isOn ? 1.0 : 0.10);
   hLine(d, cx - 7, cx + 7, cy - 4, r, g, b); // top
   hLine(d, cx - 7, cx + 7, cy + 4, r, g, b); // bottom
   vLine(d, cx - 7, cy - 4, cy + 4, r, g, b); // left
@@ -451,12 +449,10 @@ export default {
 
     // PS5 tristate: off <2W / sleep 2-25W / on >25W
     const ps5State = (s.ps5Power ?? 0) < 2 ? "off" : (s.ps5Power ?? 0) < 25 ? "sleep" : "on";
-    // TV tristate:  off <2W / standby 2-20W / on >20W
-    const tvState  = (s.tvPower  ?? 0) < 2 ? "off" : (s.tvPower  ?? 0) < 20 ? "standby" : "on";
 
     // Col order: PS5 | TV | PC
-    drawPS5(device, COLS[0].cx, ROWS[2].cy, ps5State,  s.syncInput === "input4");
-    drawTV (device, COLS[1].cx, ROWS[2].cy, tvState);
+    drawPS5(device, COLS[0].cx, ROWS[2].cy, ps5State,              s.syncInput === "input4");
+    drawTV (device, COLS[1].cx, ROWS[2].cy, (s.tvPower  ?? 0) > 10);
     drawPC (device, COLS[2].cx, ROWS[2].cy, (s.pcPower  ?? 0) > 10, s.syncInput === "input2");
 
     if (isStale(s.ps5Seen)) drawErrorMark(device, 0, 2, this._frame);
