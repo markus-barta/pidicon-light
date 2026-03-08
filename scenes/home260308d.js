@@ -199,46 +199,43 @@ async function drawBattery(d, cx, cy, pct, state, frame) {
   const isDischarging = state === "discharging";
   const dim = state === "discharging" || state === "charging" ? 1.0 : state === "standby" ? 0.60 : 0.25;
 
-  const BAR_W  = 16;   // outer width (1px border each side → 14px inner fill)
-  const BAR_H  = 8;    // outer height (1px border each side → 6px inner fill)
-  const INNER  = BAR_W - 2;  // 14 — visible fill columns
+  const BAR_W  = 16;
+  const BAR_H  = 5;   // 1px border + 3px fill + 1px border
   const x0     = cx - Math.floor(BAR_W / 2);
-  const barY   = cy + 2;  // moved down 2px
+  const barY   = cy;  // top y of bar
 
-  const BORDER   = [35, 35, 35];
-  const fillX0   = x0 + 1;
-  const filledPx = pct === null ? 0 : Math.max(0, Math.round((pct / 100) * INNER));
+  const BORDER = [35, 35, 35];
+  const filledPx = pct === null ? 0 : Math.max(0, Math.round((pct / 100) * BAR_W));
 
-  // Full outline (all 4 sides)
+  // Outline: top + bottom rails, left cap
   hLine(d, x0, x0 + BAR_W - 1, barY,             ...BORDER);
   hLine(d, x0, x0 + BAR_W - 1, barY + BAR_H - 1, ...BORDER);
-  vLine(d, x0,             barY, barY + BAR_H - 1, ...BORDER);
-  vLine(d, x0 + BAR_W - 1, barY, barY + BAR_H - 1, ...BORDER);
+  vLine(d, x0,                  barY, barY + BAR_H - 1, ...BORDER);
 
-  // Inner fill (14 columns × 6 rows)
-  for (let i = 0; i < INNER; i++) {
-    const base = _gradientColor(i, INNER);
+  // Fill columns (inner rows: barY+1 .. barY+BAR_H-2)
+  for (let i = 0; i < BAR_W; i++) {
+    const base = _gradientColor(i, BAR_W);
     const dimmed = base.map((v) => Math.round(v * dim));
     const empty  = base.map((v) => Math.round(v * dim * 0.25));
     const [r, g, b] = i < filledPx ? dimmed : empty;
-    vLine(d, fillX0 + i, barY + 1, barY + BAR_H - 2, r, g, b);
+    vLine(d, x0 + i, barY + 1, barY + BAR_H - 2, r, g, b);
   }
 
-  // Discharge animation: bright pixel right→left through filled inner area
+  // Discharge animation: bright pixel right→left through filled area, gradient-colored
   if (isDischarging && filledPx > 1) {
     const phase  = Math.floor(frame / 2) % filledPx;
-    const drainX = fillX0 + filledPx - 1 - phase;
-    const base   = _gradientColor(drainX - fillX0, INNER);
+    const drainX = x0 + filledPx - 1 - phase;
+    const base   = _gradientColor(drainX - x0, BAR_W);
     const [hr, hg, hb] = base.map((v) => Math.min(255, (v * 1.7) | 0));
     vLine(d, drainX, barY + 1, barY + BAR_H - 2, hr, hg, hb);
   }
 
-  // Nub on right: 2px tall, centered (rows 3+4 of 0-indexed 0..7)
-  const nubColor = filledPx >= INNER
-    ? _gradientColor(INNER - 1, INNER).map((v) => Math.round(v * dim))
+  // Nub on right: 2 px tall, centered in bar
+  const nubColor = filledPx >= BAR_W
+    ? _gradientColor(BAR_W - 1, BAR_W).map((v) => Math.round(v * dim))
     : BORDER;
+  d._setPixel(x0 + BAR_W, barY + 2, ...nubColor);
   d._setPixel(x0 + BAR_W, barY + 3, ...nubColor);
-  d._setPixel(x0 + BAR_W, barY + 4, ...nubColor);
 
   // % text centered above bar
   const labelColor = isDischarging ? C.dischRed : state === "charging" ? C.chrgGreen : C.stbyGrey;
@@ -266,18 +263,19 @@ async function drawBoiler(d, cx, cy, boiler) {
     boiler.state === "ok"      ? C.ok   :
     boiler.state === "unknown" ? C.warn : C.bad;
 
-  await d.drawTextRgbaAligned(tempStr, [cx, cy - 7], C.amber, "center");
+  await d.drawTextRgbaAligned(tempStr, [cx, cy - 5], C.amber, "center");
 
-  // Boiler casing: 10×10 off-white box with dark outline
-  const casingX = cx - 5;  // centered: cx=53 → x 48..57
-  const casingY = cy;       // cy=35 → y 35..44 (fills remaining cell height)
-  fillRect(d, casingX, casingY, 10, 10, 160, 160, 155);
-  hLine(d, casingX, casingX + 9, casingY,     50, 50, 48);
-  hLine(d, casingX, casingX + 9, casingY + 9, 50, 50, 48);
-  vLine(d, casingX,     casingY, casingY + 9, 50, 50, 48);
-  vLine(d, casingX + 9, casingY, casingY + 9, 50, 50, 48);
-  // 4×4 status light centered in 8×8 inner area (offset +3)
-  fillRect(d, casingX + 3, casingY + 3, 4, 4, ...stateColor);
+  // Boiler casing: 5×5 white box with darker outline
+  const casingX = cx - 2;
+  const casingY = cy + 1;
+  fillRect(d, casingX, casingY, 5, 5, 160, 160, 155);  // off-white fill
+  // Border (darker)
+  hLine(d, casingX, casingX + 4, casingY,     50, 50, 48);
+  hLine(d, casingX, casingX + 4, casingY + 4, 50, 50, 48);
+  vLine(d, casingX,     casingY, casingY + 4, 50, 50, 48);
+  vLine(d, casingX + 4, casingY, casingY + 4, 50, 50, 48);
+  // 2×2 status light centered in casing
+  fillRect(d, casingX + 1, casingY + 1, 3, 3, ...stateColor);
 }
 
 // ── Media icons ───────────────────────────────────────────────────────────────
