@@ -67,10 +67,10 @@ Per-device render loop control. Topic is **retained** — state survives restart
 
 `home/hsb1/pidicon-light/<device>/mode`
 
-| Payload | Behaviour |
-| ------- | --------- |
-| `play`  | Normal render loop (default) |
-| `pause` | Render one frame, freeze. Resume on `play`. |
+| Payload | Behaviour                                                                               |
+| ------- | --------------------------------------------------------------------------------------- |
+| `play`  | Normal render loop (default)                                                            |
+| `pause` | Render one frame, freeze. Resume on `play`.                                             |
 | `stop`  | Push black frame; Ulanzi: `setPower(false)`. Resume via `play` → re-initialises driver. |
 
 ```bash
@@ -168,8 +168,8 @@ All topics are under `home/hsb1/pidicon-light/overlay/…`
 
 `home/hsb1/pidicon-light/overlay/device/<name>/<field>`
 
-| Field     | Format            | Description                          |
-| --------- | ----------------- | ------------------------------------ |
+| Field     | Format            | Description                           |
+| --------- | ----------------- | ------------------------------------- |
 | `scenes`  | JSON array string | Override which scenes the device runs |
 | `ip`      | plain string      | Override device IP address            |
 | `enabled` | `"false"`         | Exclude device from effective config  |
@@ -242,6 +242,34 @@ mosquitto_sub -h $HOST -u smarthome -P $PASS \
 | Max sensor color | 255/channel            | ~40/channel             |
 | Time color       | Warm white             | Dim warm red            |
 | Battery fill     | Bright green/red       | Extremely dim           |
+
+---
+
+## Stale / Unknown State on Startup (Recurring Issue)
+
+**Symptom:** Row 0 icons (Nuki, terrace door, skylights) show amber/unknown color after container restart, even though the sensors are online and have retained messages on the broker.
+
+**Root cause:** pidicon-light uses a **single shared MQTT client** for all scenes. When `clock_with_homestats` and `home` both subscribe to e.g. `nuki/463F8F47/state`, the broker sees the topic already subscribed by this client and **does not re-deliver the retained message** for the second subscription. The `home` scene's handler is registered but never fires.
+
+**Fix in place (`home.js`):** Periodic self-heal — re-subscribes any topic still `null` every 30s (also at 5s). Re-subscribing forces the broker to re-deliver retained messages. Stops automatically once all topics resolve.
+
+**If amber icons persist >60s after restart:**
+
+```bash
+# Check what the broker actually has retained
+mosquitto_sub -h 192.168.1.101 -u smarthome -P PASS \
+  -t 'z2m/wz/contact/te-door' -C 1 -W 3
+
+# Check self-heal log lines
+ssh mba@hsb1.lan "docker logs pidicon-light 2>&1 | grep 'self-heal'"
+
+# Force scene hot-reload (copies current file, triggers reload)
+scp scenes/home.js mba@hsb1.lan:~/docker/mounts/pidicon-light/scenes/home.js
+```
+
+**If broker has no retained message for a topic:** the sensor hasn't published since last broker restart. Open/close the sensor once to publish a new retained message.
+
+**Do not "fix" by removing shared subscriptions** — topics like `nuki/463F8F47/state` must be shared between scenes (clock_with_homestats also uses Nuki state). The periodic re-heal is the correct mitigation.
 
 ---
 

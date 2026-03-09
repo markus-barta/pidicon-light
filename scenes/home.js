@@ -742,29 +742,42 @@ export default {
       this._s.w14Online = parseAvailability(msg);
     });
 
-    // Self-heal: after 20s re-subscribe any contact/availability topics still null.
-    // Broker will re-deliver retained messages immediately on new subscription.
-    this._healTimer = setTimeout(() => {
-      const nullChecks = [
-        ["nuki/463F8F47/state", () => this._s.nukiVrState !== null],
-        ["nuki/4A5D18FF/state", () => this._s.nukiKeState !== null],
-        ["z2m/wz/contact/te-door", () => this._s.terraceOpen !== null],
-        [
-          "z2m/wz/contact/te-door/availability",
-          () => this._s.terraceOnline !== null,
-        ],
-        ["z2m/vk/contact/w13", () => this._s.w13Open !== null],
-        ["z2m/vk/contact/w13/availability", () => this._s.w13Online !== null],
-        ["z2m/vr/contact/w14", () => this._s.w14Open !== null],
-        ["z2m/vr/contact/w14/availability", () => this._s.w14Online !== null],
-      ];
-      for (const [topic, isHealed] of nullChecks) {
-        if (!isHealed() && _h[topic]) {
+    // Self-heal: shared MQTT client means the broker won't re-deliver retained
+    // messages if another scene already holds the same subscription. Re-subscribe
+    // any topic still null every 30s until healed, then stop.
+    // Root cause: broker sees topic already subscribed by this client → skips
+    // retained delivery. Re-subscribing forces a new retained message delivery.
+    const nullChecks = [
+      ["nuki/463F8F47/state", () => this._s.nukiVrState !== null],
+      ["nuki/4A5D18FF/state", () => this._s.nukiKeState !== null],
+      ["z2m/wz/contact/te-door", () => this._s.terraceOpen !== null],
+      [
+        "z2m/wz/contact/te-door/availability",
+        () => this._s.terraceOnline !== null,
+      ],
+      ["z2m/vk/contact/w13", () => this._s.w13Open !== null],
+      ["z2m/vk/contact/w13/availability", () => this._s.w13Online !== null],
+      ["z2m/vr/contact/w14", () => this._s.w14Open !== null],
+      ["z2m/vr/contact/w14/availability", () => this._s.w14Online !== null],
+    ];
+    const heal = () => {
+      const pending = nullChecks.filter(([, isHealed]) => !isHealed());
+      if (pending.length === 0) {
+        clearInterval(this._healTimer);
+        this._healTimer = null;
+        context.logger.info("[home] self-heal: all topics resolved, stopping");
+        return;
+      }
+      for (const [topic] of pending) {
+        if (_h[topic]) {
           context.mqtt.subscribe(topic, _h[topic]);
           context.logger.info(`[home] self-heal: re-subscribed ${topic}`);
         }
       }
-    }, 20_000);
+    };
+    this._healTimer = setInterval(heal, 30_000);
+    // Also run once at 5s — catches the common fast-broker case
+    setTimeout(heal, 5_000);
 
     context.mqtt.subscribe("home/ke/sonnenbattery/status", (msg) => {
       try {
@@ -821,7 +834,7 @@ export default {
       this._nukiKePoll = null;
     }
     if (this._healTimer) {
-      clearTimeout(this._healTimer);
+      clearInterval(this._healTimer);
       this._healTimer = null;
     }
     context.mqtt.unsubscribeAll();
