@@ -146,10 +146,9 @@ function drawErrorMark(d, col, row, frame) {
 // ── Icon: Nuki circle ─────────────────────────────────────────────────────────
 //
 // Layers (back→front):
-//   Filled gray disk r=4       — lock body, always full circle
-//     Cardinal edge pixels (±4,0)(0,±4) overdrawn at 50% → soft AA edge
-//   5×5 colored ring + center  — LED indicator on lock face
-//     Locked/trans/stale → full ring. Unlocked → bottom arc only (dy >= 0).
+//   Filled gray disk r=4  — single solid background
+//   3×3 colored square    — sides full brightness, corners 50%; center fill 33%
+// Locked → full shapes. Unlocked → open top (skip dy<0 on both).
 
 function drawNukiCircle(d, cx, cy, nukiState, alive) {
   const isOpen = nukiState === "unlocked";
@@ -163,42 +162,24 @@ function drawNukiCircle(d, cx, cy, nukiState, alive) {
         ? C.open
         : C.closed;
 
-  // Gray disk r=4 — always full (lock body never clips)
+  // Filled gray disk at r=4; open = bottom half only (dy >= 0)
+  const dyStart = isOpen && !stale ? 0 : -4;
   for (let dx = -4; dx <= 4; dx++)
-    for (let dy = -4; dy <= 4; dy++)
+    for (let dy = dyStart; dy <= 4; dy++)
       if (dx * dx + dy * dy <= 16) d._setPixel(cx + dx, cy + dy, 40, 40, 40);
 
-  // Antialias: soften the 4 cardinal spike pixels at exact r=4
-  for (const [dx, dy] of [
-    [4, 0],
-    [-4, 0],
-    [0, 4],
-    [0, -4],
-  ])
-    d._setPixel(cx + dx, cy + dy, 20, 20, 20);
-
-  // 5×5 colored ring; open = bottom arc only (dy >= 0), else full ring
-  const minDy = isOpen && !stale ? 0 : -2;
+  // 3×3 colored square ring; open = skip dy < 0 (top row)
+  const minDy = isOpen && !stale ? 0 : -1;
+  // corners at 50%, sides at 100%
   for (const [dx, dy, op] of [
-    // corners (±2,±2) at 40%
-    [-2, -2, 0.4],
-    [2, -2, 0.4],
-    [-2, 2, 0.4],
-    [2, 2, 0.4],
-    // edge mids (±2,0)(0,±2) at 100%
-    [-2, 0, 1.0],
-    [2, 0, 1.0],
-    [0, -2, 1.0],
-    [0, 2, 1.0],
-    // inner diagonals (±1,±2)(±2,±1) at 70%
-    [-1, -2, 0.7],
-    [1, -2, 0.7],
-    [-1, 2, 0.7],
-    [1, 2, 0.7],
-    [-2, -1, 0.7],
-    [2, -1, 0.7],
-    [-2, 1, 0.7],
-    [2, 1, 0.7],
+    [-1, -1, 0.5],
+    [1, -1, 0.5],
+    [-1, 1, 0.5],
+    [1, 1, 0.5], // corners
+    [-1, 0, 1.0],
+    [1, 0, 1.0],
+    [0, -1, 1.0],
+    [0, 1, 1.0], // sides
   ]) {
     if (dy >= minDy)
       d._setPixel(cx + dx, cy + dy, (r * op) | 0, (g * op) | 0, (b * op) | 0);
