@@ -67,14 +67,6 @@ const C = {
   closed: [210, 30, 30],
   trans: [220, 180, 0],
   unknown: [70, 50, 0],
-  // Doors / skylights
-  frameGray: [160, 160, 155], // mid-gray frame outline
-  doorFill: [50, 10, 10], // very dark red fill (closed door)
-  doorFillOpen: [8, 35, 12], // very dark green fill (open door)
-  doorHandle: [200, 100, 80], // warm highlight for handle
-  skyFill: [120, 15, 15], // medium-dark red glass (closed skylight)
-  skyFillOpen: [30, 160, 50], // bright green glass (open skylight)
-  skyShadow: [40, 40, 38], // gray shadow row (tilt 3D effect)
   ok: [0, 200, 80],
   warn: [220, 160, 0],
   bad: [200, 30, 30],
@@ -191,105 +183,59 @@ function drawNukiCircle(d, cx, cy, nukiState, alive) {
 
 // ── Icon: Dual sliding glass terrace door ─────────────────────────────────────
 //
-// 12×9px total (cx±5, cy-4..cy+4). Two sliding panels inside outer frame.
-// Frame: mid-gray. Fill: very dark red (closed) / very dark green (open).
-// Handles: brighter warm pixel at vertical midpoint, inner edge of each panel.
-// Closed: panels meet at center seam; handles face inward.
-// Open:   panels slid to outer edges; center area shows fill gap.
+// 14×11px centered at (cx, cy).
+// Closed: two panels meeting at center seam with knobs.
+// Open:   panels slid to outer edges — ~6px gap visible in center.
 
-function drawSlidingDoor(d, cx, cy, isOpen) {
-  const x0 = cx - 5;
-  const y0 = cy - 4;
-  const W = 10; // inner width (x0..x0+W = 11px total incl. both side frames)
-  const H = 8; // inner height
-  const [fr, fg, fb] = C.frameGray;
-  const [dr, dg, db] = isOpen ? C.doorFillOpen : C.doorFill;
-  const [hr, hg, hb] = isOpen ? C.skyFillOpen : C.skyFill; // green=open, red=closed
-
-  // Outer frame
-  hLine(d, x0, x0 + W, y0, fr, fg, fb);
-  hLine(d, x0, x0 + W, y0 + H, fr, fg, fb);
-  vLine(d, x0, y0, y0 + H, fr, fg, fb);
-  vLine(d, x0 + W, y0, y0 + H, fr, fg, fb);
+function drawSlidingDoor(d, cx, cy, isOpen, r, g, b) {
+  const x0 = cx - 7;
+  const y0 = cy - 5;
+  // Fixed frame: top rail + bottom sill + outer sides
+  hLine(d, x0, x0 + 13, y0, r, g, b);
+  hLine(d, x0, x0 + 13, y0 + 10, r, g, b);
+  vLine(d, x0, y0, y0 + 10, r, g, b);
+  vLine(d, x0 + 13, y0, y0 + 10, r, g, b);
 
   if (!isOpen) {
-    // Center seam (two adjacent lines)
-    vLine(d, cx - 1, y0, y0 + H, fr, fg, fb);
-    vLine(d, cx, y0, y0 + H, fr, fg, fb);
-    // Dark fill in each panel
-    fillRect(d, x0 + 1, y0 + 1, 4, H - 1, dr, dg, db); // left panel
-    fillRect(d, cx + 1, y0 + 1, 4, H - 1, dr, dg, db); // right panel
-    // Handles: inner edge of each panel, vertical center
-    d._setPixel(cx - 1, cy, hr, hg, hb); // left handle (+1px right per design)
-    d._setPixel(cx + 1, cy, hr, hg, hb); // right handle
+    vLine(d, x0 + 6, y0, y0 + 10, r, g, b); // left panel right edge
+    vLine(d, x0 + 7, y0, y0 + 10, r, g, b); // right panel left edge
+    d._setPixel(x0 + 3, cy, r, g, b); // left knob
+    d._setPixel(x0 + 10, cy, r, g, b); // right knob
   } else {
-    // Panels slid out; inner edges close to outer frame
-    vLine(d, x0 + 3, y0, y0 + H, fr, fg, fb); // left panel inner edge
-    vLine(d, x0 + W - 3, y0, y0 + H, fr, fg, fb); // right panel inner edge
-    // Thin fill strips at outer edges
-    fillRect(d, x0 + 1, y0 + 1, 2, H - 1, dr, dg, db); // left strip
-    fillRect(d, x0 + W - 2, y0 + 1, 2, H - 1, dr, dg, db); // right strip
-    // Open center area slightly lighter
-    fillRect(d, x0 + 4, y0 + 1, W - 7, H - 1, dr, dg, db);
-    // Handles: now face outward (inner edge of each slid panel)
-    d._setPixel(x0 + 3, cy, hr, hg, hb);
-    d._setPixel(x0 + W - 3, cy, hr, hg, hb);
+    vLine(d, x0 + 3, y0, y0 + 10, r, g, b); // left panel inner edge (slid out)
+    vLine(d, x0 + 10, y0, y0 + 10, r, g, b); // right panel inner edge
   }
 }
 
-// ── Icon: Side-by-side skylights (W13 left, W14 right) ───────────────────────
+// ── Icon: Stacked skylights (W13 top, W14 bottom) ────────────────────────────
 //
-// Each tile: 4×6px outer (3×4 inner fill). 1px gap between tiles.
-// Frame: mid-gray outline. Fill: dark red (closed) / bright green (open).
-// Open state: panel height reduced by 1px (tilts up), gray shadow row at bottom.
-// Unknown: fill uses C.unknown color.
-//
-// Layout centered at (cx, cy):
-//   W13: x = cx-5..cx-1   W14: x = cx+1..cx+5
-//   y   = cy-3..cy+2  (6px tall closed, 5px panel + 1px shadow when open)
+// Each window: 9×7px. Stacked with 1px gap. Center at (cx, cy).
 
-function drawSideBySideSkylights(d, cx, cy, leftOpen, rightOpen) {
-  // Tile x offsets: left tile starts at cx-5, right tile at cx+1
-  const tiles = [
-    { x0: cx - 5, state: leftOpen },
-    { x0: cx + 1, state: rightOpen },
-  ];
-  const y0 = cy - 3; // top of tile
-  const TW = 4; // tile outer width  (0..3 → 4px)
-  const TH = 6; // tile outer height (0..5 → 6px)
-  const [fr, fg, fb] = C.frameGray;
-  const [sr, sg, sb] = C.skyShadow;
+function drawStackedWindows(d, cx, cy, topOpen, botOpen) {
+  const topColor = topOpen === null ? C.unknown : topOpen ? C.open : C.closed;
+  const botColor = botOpen === null ? C.unknown : botOpen ? C.open : C.closed;
 
-  for (const { x0, state } of tiles) {
-    const isOpen = state === true;
-    const isUnknown = state === null;
-    const [ir, ig, ib] = isUnknown
-      ? C.unknown
-      : isOpen
-        ? C.skyFillOpen
-        : C.skyFill;
-
+  function drawWin(x0, y0, isOpen, [r, g, b]) {
+    hLine(d, x0, x0 + 8, y0, r, g, b);
+    hLine(d, x0, x0 + 8, y0 + 6, r, g, b);
+    vLine(d, x0, y0, y0 + 6, r, g, b);
+    vLine(d, x0 + 8, y0, y0 + 6, r, g, b);
+    hLine(d, x0, x0 + 8, y0 + 3, r, g, b); // mid divider
     if (!isOpen) {
-      // Full 4×6 tile
-      hLine(d, x0, x0 + TW - 1, y0, fr, fg, fb); // top
-      hLine(d, x0, x0 + TW - 1, y0 + TH - 1, fr, fg, fb); // bottom
-      vLine(d, x0, y0, y0 + TH - 1, fr, fg, fb); // left
-      vLine(d, x0 + TW - 1, y0, y0 + TH - 1, fr, fg, fb); // right
-      // Fill inner 2×4
-      fillRect(d, x0 + 1, y0 + 1, TW - 2, TH - 2, ir, ig, ib);
-    } else {
-      // Panel is 1px shorter (tilted open) — 4×5, shadow row at bottom
-      const ph = TH - 1; // panel height = 5
-      hLine(d, x0, x0 + TW - 1, y0, fr, fg, fb); // top
-      hLine(d, x0, x0 + TW - 1, y0 + ph - 1, fr, fg, fb); // bottom of panel
-      vLine(d, x0, y0, y0 + ph - 1, fr, fg, fb); // left
-      vLine(d, x0 + TW - 1, y0, y0 + ph - 1, fr, fg, fb); // right
-      // Fill inner 2×3
-      fillRect(d, x0 + 1, y0 + 1, TW - 2, ph - 2, ir, ig, ib);
-      // Shadow row (3D tilt effect) — where bottom frame was
-      hLine(d, x0 + 1, x0 + TW - 2, y0 + TH - 1, sr, sg, sb);
+      const dr = r >> 3,
+        dg = g >> 3,
+        db = b >> 3;
+      for (let qy = y0 + 1; qy <= y0 + 5; qy++) {
+        if (qy === y0 + 3) continue;
+        for (let qx = x0 + 1; qx <= x0 + 7; qx++)
+          d._setPixel(qx, qy, dr, dg, db);
+      }
     }
   }
+
+  const x0 = cx - 4;
+  drawWin(x0, cy - 7, topOpen === true, topColor); // W13 top window
+  drawWin(x0, cy + 1, botOpen === true, botColor); // W14 bottom window
 }
 
 // ── Cell: Battery — horizontal bar (SOC% above) ───────────────────────────────
@@ -953,17 +899,19 @@ export default {
     drawNukiCircle(device, cx0, ROWS[0].y1 - 4, s.nukiKeState, s.nukiKeAlive); // bottom cy=21
 
     // TERRACE dual sliding door (col 1) — error if z2m reports offline
-    drawSlidingDoor(device, COLS[1].cx, ROWS[0].cy, s.terraceOpen);
+    const terraceColor =
+      s.terraceOpen === null ? C.unknown : s.terraceOpen ? C.open : C.closed;
+    drawSlidingDoor(
+      device,
+      COLS[1].cx,
+      ROWS[0].cy,
+      s.terraceOpen === true,
+      ...terraceColor,
+    );
     if (s.terraceOnline === false) drawErrorMark(device, 1, 0, this._frame);
 
-    // W13 + W14 side-by-side skylights (col 2) — error if either is offline
-    drawSideBySideSkylights(
-      device,
-      COLS[2].cx,
-      ROWS[0].cy,
-      s.w13Open,
-      s.w14Open,
-    );
+    // W13 + W14 stacked skylights (col 2) — error if either is offline
+    drawStackedWindows(device, COLS[2].cx, ROWS[0].cy, s.w13Open, s.w14Open);
     if (s.w13Online === false || s.w14Online === false)
       drawErrorMark(device, 2, 0, this._frame);
 
