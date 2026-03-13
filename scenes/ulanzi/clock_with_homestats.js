@@ -81,6 +81,16 @@ const NIGHT = {
 
 // Brightness heartbeat — re-assert every 5 min (missed transition guard)
 const BRI_HEARTBEAT_MS = 5 * 60 * 1000;
+const DEFAULT_SETTINGS = {
+  dayStartHour: 7,
+  nightStartHour: 19,
+  briDay: 20,
+  briNight: 8,
+  showSeconds: true,
+  sonnenPollMs: 3000,
+  timezone: "Europe/Vienna",
+  locale: "de-AT",
+};
 
 // ---------------------------------------------------------------------------
 
@@ -533,14 +543,15 @@ export default {
 
   _mapSettings(values) {
     return {
-      dayStartHour: values.day_start_hour,
-      nightStartHour: values.night_start_hour,
-      briDay: values.bri_day,
-      briNight: values.bri_night,
-      showSeconds: values.show_seconds,
-      sonnenPollMs: values.sonnen_poll_ms,
-      timezone: values.timezone,
-      locale: values.locale,
+      dayStartHour: values.day_start_hour ?? DEFAULT_SETTINGS.dayStartHour,
+      nightStartHour:
+        values.night_start_hour ?? DEFAULT_SETTINGS.nightStartHour,
+      briDay: values.bri_day ?? DEFAULT_SETTINGS.briDay,
+      briNight: values.bri_night ?? DEFAULT_SETTINGS.briNight,
+      showSeconds: values.show_seconds ?? DEFAULT_SETTINGS.showSeconds,
+      sonnenPollMs: values.sonnen_poll_ms ?? DEFAULT_SETTINGS.sonnenPollMs,
+      timezone: values.timezone ?? DEFAULT_SETTINGS.timezone,
+      locale: values.locale ?? DEFAULT_SETTINGS.locale,
     };
   },
 };

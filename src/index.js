@@ -96,6 +96,7 @@ async function initializeMqtt() {
 }
 
 function startScenesWatcher() {
+  const configDir = dirname(configPath);
   const dirs = sceneLoader.getSceneDirs();
   scenesWatcher = new ScenesWatcher(
     dirs,
@@ -107,6 +108,13 @@ function startScenesWatcher() {
         );
         return;
       }
+      sceneMetadata = await loadSceneMetadata(
+        configDir,
+        effectiveConfig.scenes,
+        {
+          logger,
+        },
+      );
       for (const name of names) {
         await sceneLoader.clearScene(name);
       }

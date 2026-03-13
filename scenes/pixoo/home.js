@@ -46,6 +46,29 @@ import { exec } from "child_process";
 // ── Brightness helpers ────────────────────────────────────────────────────────
 
 const BRI_HEARTBEAT_MS = 5 * 60 * 1000;
+const DEFAULT_SETTINGS = {
+  briDay: 100,
+  briNight: 7,
+  sunElevLo: -6,
+  sunElevHi: 10,
+  fallbackDayStart: "07:30",
+  fallbackNightStart: "20:30",
+  staleMs: 300000,
+  nukiVrIp: "192.168.1.186",
+  nukiKeIp: "192.168.1.244",
+  nukiPingMs: 60000,
+  healRetryMs: 30000,
+  healInitialDelayMs: 5000,
+  ps5OnW: 25,
+  tvOnW: 26,
+  pcOnW: 10,
+  syncboxHost: "192.168.1.111",
+  syncboxTimeoutMs: 2500,
+  syncboxPollMs: 5000,
+  syncboxFreshMs: 30000,
+  syncboxInputPs5: "input4",
+  syncboxInputPc: "input2",
+};
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
@@ -1334,34 +1357,43 @@ export default {
   },
 
   _mapSettings(values) {
-    const [dayH, dayM] = values.fallback_day_start
+    const fallbackDayStart =
+      values.fallback_day_start ?? DEFAULT_SETTINGS.fallbackDayStart;
+    const fallbackNightStart =
+      values.fallback_night_start ?? DEFAULT_SETTINGS.fallbackNightStart;
+    const [dayH, dayM] = fallbackDayStart
       .split(":")
       .map((v) => parseInt(v, 10));
-    const [nightH, nightM] = values.fallback_night_start
+    const [nightH, nightM] = fallbackNightStart
       .split(":")
       .map((v) => parseInt(v, 10));
     return {
-      briDay: values.bri_day,
-      briNight: values.bri_night,
-      sunElevLo: values.sun_elev_lo,
-      sunElevHi: values.sun_elev_hi,
+      briDay: values.bri_day ?? DEFAULT_SETTINGS.briDay,
+      briNight: values.bri_night ?? DEFAULT_SETTINGS.briNight,
+      sunElevLo: values.sun_elev_lo ?? DEFAULT_SETTINGS.sunElevLo,
+      sunElevHi: values.sun_elev_hi ?? DEFAULT_SETTINGS.sunElevHi,
       fallbackDayStartMins: dayH * 60 + dayM,
       fallbackNightStartMins: nightH * 60 + nightM,
-      staleMs: values.stale_ms,
-      nukiVrIp: values.nuki_vr_ip,
-      nukiKeIp: values.nuki_ke_ip,
-      nukiPingMs: values.nuki_ping_ms,
-      healRetryMs: values.heal_retry_ms,
-      healInitialDelayMs: values.heal_initial_delay_ms,
-      ps5OnW: values.ps5_on_w,
-      tvOnW: values.tv_on_w,
-      pcOnW: values.pc_on_w,
-      syncboxHost: values.syncbox_host,
-      syncboxTimeoutMs: values.syncbox_timeout_ms,
-      syncboxPollMs: values.syncbox_poll_ms,
-      syncboxFreshMs: values.syncbox_fresh_ms,
-      syncboxInputPs5: values.syncbox_input_ps5,
-      syncboxInputPc: values.syncbox_input_pc,
+      staleMs: values.stale_ms ?? DEFAULT_SETTINGS.staleMs,
+      nukiVrIp: values.nuki_vr_ip ?? DEFAULT_SETTINGS.nukiVrIp,
+      nukiKeIp: values.nuki_ke_ip ?? DEFAULT_SETTINGS.nukiKeIp,
+      nukiPingMs: values.nuki_ping_ms ?? DEFAULT_SETTINGS.nukiPingMs,
+      healRetryMs: values.heal_retry_ms ?? DEFAULT_SETTINGS.healRetryMs,
+      healInitialDelayMs:
+        values.heal_initial_delay_ms ?? DEFAULT_SETTINGS.healInitialDelayMs,
+      ps5OnW: values.ps5_on_w ?? DEFAULT_SETTINGS.ps5OnW,
+      tvOnW: values.tv_on_w ?? DEFAULT_SETTINGS.tvOnW,
+      pcOnW: values.pc_on_w ?? DEFAULT_SETTINGS.pcOnW,
+      syncboxHost: values.syncbox_host ?? DEFAULT_SETTINGS.syncboxHost,
+      syncboxTimeoutMs:
+        values.syncbox_timeout_ms ?? DEFAULT_SETTINGS.syncboxTimeoutMs,
+      syncboxPollMs: values.syncbox_poll_ms ?? DEFAULT_SETTINGS.syncboxPollMs,
+      syncboxFreshMs:
+        values.syncbox_fresh_ms ?? DEFAULT_SETTINGS.syncboxFreshMs,
+      syncboxInputPs5:
+        values.syncbox_input_ps5 ?? DEFAULT_SETTINGS.syncboxInputPs5,
+      syncboxInputPc:
+        values.syncbox_input_pc ?? DEFAULT_SETTINGS.syncboxInputPc,
     };
   },
 };
