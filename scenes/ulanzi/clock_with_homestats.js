@@ -90,6 +90,72 @@ export default {
   deviceType: "ulanzi",
   description: "Time + Nuki / terrace / skylights / sonnenbatterie. Day/night.",
 
+  settingsSchema: {
+    day_start_hour: {
+      type: "int",
+      label: "Day Start Hour",
+      group: "Schedule",
+      default: 7,
+      min: 0,
+      max: 23,
+      step: 1,
+    },
+    night_start_hour: {
+      type: "int",
+      label: "Night Start Hour",
+      group: "Schedule",
+      default: 19,
+      min: 0,
+      max: 23,
+      step: 1,
+    },
+    bri_day: {
+      type: "int",
+      label: "Day Brightness",
+      group: "Brightness",
+      default: 20,
+      min: 1,
+      max: 255,
+      step: 1,
+    },
+    bri_night: {
+      type: "int",
+      label: "Night Brightness",
+      group: "Brightness",
+      default: 8,
+      min: 1,
+      max: 255,
+      step: 1,
+    },
+    show_seconds: {
+      type: "boolean",
+      label: "Show Seconds",
+      group: "Display",
+      default: true,
+    },
+    sonnen_poll_ms: {
+      type: "int",
+      label: "Sonnen Poll (ms)",
+      group: "Polling",
+      default: 3000,
+      min: 1000,
+      max: 60000,
+      step: 500,
+    },
+    timezone: {
+      type: "string",
+      label: "Timezone",
+      group: "Locale",
+      default: "Europe/Vienna",
+    },
+    locale: {
+      type: "string",
+      label: "Locale",
+      group: "Locale",
+      default: "de-AT",
+    },
+  },
+
   // ---------------------------------------------------------------------------
   // init
   // ---------------------------------------------------------------------------
@@ -103,14 +169,16 @@ export default {
       batteryState: null,
     };
 
-    // Settings — overridable via MQTT, fallback to defaults
-    this._settings = {
-      dayStartHour: 7,
-      nightStartHour: 19,
-      briDay: 20,
-      briNight: 8,
-      showSeconds: true, // false → HH:MM always (same offset as night mode)
-    };
+    this._settings = this._mapSettings(context.settings.all());
+    this._unsubscribeSettings = context.settings.subscribe((values) => {
+      const prevPoll = this._settings?.sonnenPollMs;
+      this._settings = this._mapSettings(values);
+      this._lastBriSet = 0;
+      if (prevPoll && prevPoll !== this._settings.sonnenPollMs) {
+        this._stopSonnenPoll();
+        this._startSonnenPoll(context.logger);
+      }
+    });
 
     // Debug overrides — null = not active
     this._debug = {
@@ -122,63 +190,6 @@ export default {
 
     this._lastMode = null;
     this._lastBriSet = 0;
-
-    const S = context.settingsTopic; // pidicon-light/<device>/<scene>/settings
-
-    // --- Settings -----------------------------------------------------------
-
-    const parseHour = (msg) => {
-      const h = parseInt(msg.trim(), 10);
-      return !isNaN(h) && h >= 0 && h <= 23 ? h : null;
-    };
-    const parseBri = (msg) => {
-      const b = parseInt(msg.trim(), 10);
-      return !isNaN(b) && b >= 1 && b <= 255 ? b : null;
-    };
-
-    context.mqtt.subscribe(`${S}/day_start_hour`, (msg) => {
-      const v = parseHour(msg);
-      if (v !== null) {
-        this._settings.dayStartHour = v;
-        context.logger.info(`[${this.name}] day_start_hour = ${v}`);
-      }
-    });
-    context.mqtt.subscribe(`${S}/night_start_hour`, (msg) => {
-      const v = parseHour(msg);
-      if (v !== null) {
-        this._settings.nightStartHour = v;
-        context.logger.info(`[${this.name}] night_start_hour = ${v}`);
-      }
-    });
-    context.mqtt.subscribe(`${S}/bri_day`, (msg) => {
-      const v = parseBri(msg);
-      if (v !== null) {
-        this._settings.briDay = v;
-        this._lastBriSet = 0;
-        context.logger.info(`[${this.name}] bri_day = ${v}`);
-      }
-    });
-    context.mqtt.subscribe(`${S}/bri_night`, (msg) => {
-      const v = parseBri(msg);
-      if (v !== null) {
-        this._settings.briNight = v;
-        this._lastBriSet = 0;
-        context.logger.info(`[${this.name}] bri_night = ${v}`);
-      }
-    });
-
-    // show_seconds: "true" | "false" | "" (clear → revert to default true)
-    context.mqtt.subscribe(`${S}/show_seconds`, (msg) => {
-      const v = msg.trim().toLowerCase();
-      if (v === "" || v === "null") {
-        this._settings.showSeconds = true; // reset to default
-      } else {
-        this._settings.showSeconds = v !== "false";
-      }
-      context.logger.info(
-        `[${this.name}] show_seconds = ${this._settings.showSeconds}`,
-      );
-    });
 
     // --- Sensor topics ------------------------------------------------------
 
@@ -259,6 +270,7 @@ export default {
   // destroy
   // ---------------------------------------------------------------------------
   async destroy(context) {
+    this._unsubscribeSettings?.();
     context.mqtt.unsubscribeAll();
     this._stopSonnenPoll();
   },
@@ -298,8 +310,8 @@ export default {
     const now = new Date();
     // Night always hides seconds; day respects show_seconds setting
     const withSeconds = isDay && this._settings.showSeconds;
-    const timeStr = now.toLocaleTimeString("de-AT", {
-      timeZone: "Europe/Vienna",
+    const timeStr = now.toLocaleTimeString(this._settings.locale, {
+      timeZone: this._settings.timezone,
       hour: "2-digit",
       minute: "2-digit",
       ...(withSeconds ? { second: "2-digit" } : {}),
@@ -407,9 +419,9 @@ export default {
 
     // Poll immediately on start, then every 3s
     poll();
-    this._sonnenPollInterval = setInterval(poll, 3000);
+    this._sonnenPollInterval = setInterval(poll, this._settings.sonnenPollMs);
     logger.info(
-      `[clock_with_homestats] Sonnenbatterie polling started (${url}, every 3s)`,
+      `[clock_with_homestats] Sonnenbatterie polling started (${url}, every ${this._settings.sonnenPollMs}ms)`,
     );
   },
 
@@ -517,5 +529,18 @@ export default {
         { dl: [xStart + rowFilled, row, xEnd, row, dimColor] },
       ];
     }
+  },
+
+  _mapSettings(values) {
+    return {
+      dayStartHour: values.day_start_hour,
+      nightStartHour: values.night_start_hour,
+      briDay: values.bri_day,
+      briNight: values.bri_night,
+      showSeconds: values.show_seconds,
+      sonnenPollMs: values.sonnen_poll_ms,
+      timezone: values.timezone,
+      locale: values.locale,
+    };
   },
 };

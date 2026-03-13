@@ -14,6 +14,7 @@ import { ConfigOverlay } from "../lib/config-overlay.js";
 import { ScenesWatcher } from "../lib/scenes-watcher.js";
 import { WebServer } from "../lib/web-server.js";
 import { FramePreviewStore } from "../lib/frame-preview-store.js";
+import { SceneSettingsService } from "../lib/scene-settings-service.js";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -60,6 +61,7 @@ let effectiveConfig = null; // Last computed merged config (served by WebServer)
 let webServer = null;
 let framePreviewStore = null;
 let sceneMetadata = {};
+let sceneSettingsService = null;
 
 // ---------------------------------------------------------------------------
 
@@ -229,6 +231,7 @@ async function applyOverlayReload() {
     sceneLoader = new SceneLoader(configDir, effectiveConfig.scenes, {
       logger,
       mqttService,
+      sceneSettingsService,
     });
     startScenesWatcher();
 
@@ -277,6 +280,7 @@ async function reloadConfig(newConfigContent) {
     sceneLoader = new SceneLoader(configDir, effectiveConfig.scenes, {
       logger,
       mqttService,
+      sceneSettingsService,
     });
     startScenesWatcher();
 
@@ -303,6 +307,7 @@ async function shutdown(signal) {
   if (configWatcher) await configWatcher.stop();
   if (scenesWatcher) scenesWatcher.stop();
   if (configOverlay) configOverlay.unsubscribe();
+  if (sceneSettingsService) sceneSettingsService.stop();
   if (webServer) webServer.stop();
 
   await stopAllDevices();
@@ -353,6 +358,13 @@ async function main() {
     : baseConfig;
 
   framePreviewStore = new FramePreviewStore({ logger });
+  sceneSettingsService = new SceneSettingsService({
+    getConfig: () => effectiveConfig,
+    getSceneMetadata: () => sceneMetadata,
+    mqttService,
+    logger,
+  });
+  await sceneSettingsService.start();
 
   if (mqttService) mqttService.publishConfig(effectiveConfig); // publish merged result
 
@@ -365,6 +377,7 @@ async function main() {
   sceneLoader = new SceneLoader(configDir, effectiveConfig.scenes, {
     logger,
     mqttService,
+    sceneSettingsService,
   });
   startScenesWatcher();
 
@@ -381,8 +394,10 @@ async function main() {
     configPath,
     getEffectiveConfig: () => effectiveConfig,
     getSceneMetadata: () => sceneMetadata,
+    getSceneSettingsState: () => sceneSettingsService?.getUiState() || {},
     getFramePreviews: () => framePreviewStore?.list() || {},
     mqttService,
+    sceneSettingsService,
     logger,
   });
   webServer.start();

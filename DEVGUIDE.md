@@ -37,6 +37,7 @@ config.json
 - Per-device scene list, mode control (play/pause/stop)
 - Per-device live preview: Pixoo mirrors runtime buffer, Ulanzi polls AWTRIX `/api/screen`
 - Device config can also persist `displayName`, `comment`, and `preview` UI settings
+- Scenes can declare `settingsSchema`; per-device per-scene values persist in `device.sceneSettings`
 - Config file write + MQTT overlay support
 
 **Simple Scene Contract:**
@@ -44,6 +45,18 @@ config.json
 ```javascript
 export default {
   name: "my-scene",
+  settingsSchema: {
+    speed_ms: {
+      type: "int",
+      label: "Speed (ms)",
+      group: "Timing",
+      default: 1000,
+      min: 100,
+      max: 10000,
+      step: 100,
+    },
+  },
+
   async render(device) {
     await device.drawCustom({ text: "Hi", color: "#00FF00" });
     return 1000; // ms until next call, or null to end scene
@@ -61,6 +74,12 @@ export default {
       "type": "ulanzi",
       "ip": "192.168.1.56",
       "scenes": ["clock"],
+      "sceneSettings": {
+        "clock": {
+          "text_color": "#00FF00",
+          "show_seconds": true
+        }
+      },
       "minFrameMs": 500
     },
     {
@@ -157,6 +176,14 @@ render() returns null     # scene is done → advance to next scene
 - `return null` → scene ends, render loop moves to next scene
 - Multiple scenes cycle in order: when one returns `null`, the next starts
 - On error, backoff kicks in (1s → 2s → 4s → … → 10min cap), scene retries
+
+## Scene Settings System
+
+- Scene modules can expose `settingsSchema` for typed UI/runtime settings
+- Persisted values live under `devices[].sceneSettings[sceneName]` in `config.json`
+- Effective value precedence: scene default -> persisted config -> retained MQTT overlay
+- Live overlay topics stay per-device and per-scene: `pidicon-light/<device>/<scene>/settings/<key>`
+- Web UI can edit persisted settings, set/clear overlay values, and clone/detach scenes into `generated-scenes/`
 
 **Example cadences:**
 | Scene | Return value | Effect |

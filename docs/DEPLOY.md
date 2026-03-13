@@ -11,12 +11,14 @@
 
 ## Volume mounts (in container)
 
-| Host path                          | Container path           |
-| ---------------------------------- | ------------------------ |
-| `mounts/pidicon-light/config.json` | `/data/config.json` (rw) |
-| `mounts/pidicon-light/scenes/`     | `/app/scenes/` (ro)      |
+| Host path                                | Container path                |
+| ---------------------------------------- | ----------------------------- |
+| `mounts/pidicon-light/config.json`       | `/data/config.json` (rw)      |
+| `mounts/pidicon-light/scenes/`           | `/app/scenes/` (ro)           |
+| `mounts/pidicon-light/generated-scenes/` | `/data/generated-scenes` (rw) |
 
 Scene paths in `config.json` use `/app/scenes/` — the mount overlay takes effect, so files in the host `scenes/` folder shadow the built-in image scenes.
+Generated or detached scene copies should use `./generated-scenes/<name>.js` so they persist across container recreates.
 
 ---
 

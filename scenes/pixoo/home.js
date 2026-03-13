@@ -46,17 +46,12 @@ import { exec } from "child_process";
 // ── Brightness helpers ────────────────────────────────────────────────────────
 
 const BRI_HEARTBEAT_MS = 5 * 60 * 1000;
-const BRI_ELEV_LO = -6; // °  below this → full night brightness
-const BRI_ELEV_HI = 10; // °  above this → full day brightness
-
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
-function elevToBri(elev, night, day) {
+function elevToBri(elev, night, day, low = -6, high = 10) {
   return Math.round(
-    night +
-      (day - night) *
-        clamp((elev - BRI_ELEV_LO) / (BRI_ELEV_HI - BRI_ELEV_LO), 0, 1),
+    night + (day - night) * clamp((elev - low) / (high - low), 0, 1),
   );
 }
 
@@ -640,7 +635,8 @@ function drawPC(d, cx, cy, isOn, stale) {
 // ── Staleness / Nuki ping ──────────────────────────────────────────────────────
 
 const STALE_MS = 5 * 60 * 1000;
-const isStale = (ts) => ts === null || Date.now() - ts > STALE_MS;
+const isStale = (ts, staleMs = STALE_MS) =>
+  ts === null || Date.now() - ts > staleMs;
 
 function pingHost(ip) {
   return new Promise((resolve) => {
@@ -659,12 +655,223 @@ export default {
   pretty_name: "Home Dashboard",
   deviceType: "pixoo",
 
+  settingsSchema: {
+    bri_day: {
+      type: "int",
+      label: "Day Brightness",
+      group: "Brightness",
+      default: 100,
+      min: 1,
+      max: 100,
+      step: 1,
+    },
+    bri_night: {
+      type: "int",
+      label: "Night Brightness",
+      group: "Brightness",
+      default: 7,
+      min: 1,
+      max: 100,
+      step: 1,
+    },
+    sun_elev_lo: {
+      type: "float",
+      label: "Sun Elevation Night",
+      group: "Brightness",
+      default: -6,
+      min: -20,
+      max: 20,
+      step: 0.5,
+    },
+    sun_elev_hi: {
+      type: "float",
+      label: "Sun Elevation Day",
+      group: "Brightness",
+      default: 10,
+      min: -20,
+      max: 20,
+      step: 0.5,
+    },
+    fallback_day_start: {
+      type: "time",
+      label: "Fallback Day Start",
+      group: "Brightness",
+      default: "07:30",
+    },
+    fallback_night_start: {
+      type: "time",
+      label: "Fallback Night Start",
+      group: "Brightness",
+      default: "20:30",
+    },
+    stale_ms: {
+      type: "int",
+      label: "Stale Timeout (ms)",
+      group: "Timing",
+      default: 300000,
+      min: 1000,
+      max: 3600000,
+      step: 1000,
+    },
+    nuki_vr_ip: {
+      type: "string",
+      label: "Nuki VR IP",
+      group: "Sources",
+      default: "192.168.1.186",
+    },
+    nuki_ke_ip: {
+      type: "string",
+      label: "Nuki Keller IP",
+      group: "Sources",
+      default: "192.168.1.244",
+    },
+    nuki_ping_ms: {
+      type: "int",
+      label: "Nuki Ping Poll (ms)",
+      group: "Polling",
+      default: 60000,
+      min: 1000,
+      max: 600000,
+      step: 1000,
+    },
+    heal_retry_ms: {
+      type: "int",
+      label: "Self-Heal Retry (ms)",
+      group: "Polling",
+      default: 30000,
+      min: 1000,
+      max: 600000,
+      step: 1000,
+    },
+    heal_initial_delay_ms: {
+      type: "int",
+      label: "Self-Heal Initial Delay (ms)",
+      group: "Polling",
+      default: 5000,
+      min: 0,
+      max: 600000,
+      step: 500,
+    },
+    ps5_on_w: {
+      type: "int",
+      label: "PS5 On Threshold (W)",
+      group: "Thresholds",
+      default: 25,
+      min: 0,
+      max: 500,
+      step: 1,
+    },
+    tv_on_w: {
+      type: "int",
+      label: "TV On Threshold (W)",
+      group: "Thresholds",
+      default: 26,
+      min: 0,
+      max: 500,
+      step: 1,
+    },
+    pc_on_w: {
+      type: "int",
+      label: "PC On Threshold (W)",
+      group: "Thresholds",
+      default: 10,
+      min: 0,
+      max: 500,
+      step: 1,
+    },
+    syncbox_host: {
+      type: "string",
+      label: "Syncbox Host",
+      group: "Sources",
+      default: "192.168.1.111",
+    },
+    syncbox_timeout_ms: {
+      type: "int",
+      label: "Syncbox Timeout (ms)",
+      group: "Polling",
+      default: 2500,
+      min: 500,
+      max: 10000,
+      step: 100,
+    },
+    syncbox_poll_ms: {
+      type: "int",
+      label: "Syncbox Poll (ms)",
+      group: "Polling",
+      default: 5000,
+      min: 1000,
+      max: 60000,
+      step: 500,
+    },
+    syncbox_fresh_ms: {
+      type: "int",
+      label: "Syncbox Freshness (ms)",
+      group: "Timing",
+      default: 30000,
+      min: 1000,
+      max: 600000,
+      step: 1000,
+    },
+    syncbox_input_ps5: {
+      type: "string",
+      label: "Syncbox Input for PS5",
+      group: "Sources",
+      default: "input4",
+    },
+    syncbox_input_pc: {
+      type: "string",
+      label: "Syncbox Input for PC",
+      group: "Sources",
+      default: "input2",
+    },
+  },
+
   async init(context) {
     this._frame = 0;
     this._logger = context.logger;
 
+    this._cfg = this._mapSettings(context.settings.all());
+    this._unsubscribeSettings = context.settings.subscribe((values) => {
+      const prev = this._cfg;
+      this._cfg = this._mapSettings(values);
+      if (this._bri) {
+        this._bri.day = this._cfg.briDay;
+        this._bri.night = this._cfg.briNight;
+      }
+      this._lastBriSet = 0;
+
+      if (
+        prev.nukiPingMs !== this._cfg.nukiPingMs ||
+        prev.nukiVrIp !== this._cfg.nukiVrIp ||
+        prev.nukiKeIp !== this._cfg.nukiKeIp
+      ) {
+        this._restartNukiPolls();
+      }
+      if (
+        prev.syncboxHost !== this._cfg.syncboxHost ||
+        prev.syncboxTimeoutMs !== this._cfg.syncboxTimeoutMs ||
+        prev.syncboxPollMs !== this._cfg.syncboxPollMs
+      ) {
+        this._stopSyncboxPoll();
+        this._startSyncboxPoll(context.logger);
+      }
+      if (
+        this._healRunner &&
+        (prev.healRetryMs !== this._cfg.healRetryMs ||
+          prev.healInitialDelayMs !== this._cfg.healInitialDelayMs)
+      ) {
+        if (this._healTimer) clearInterval(this._healTimer);
+        this._healTimer = setInterval(this._healRunner, this._cfg.healRetryMs);
+        setTimeout(this._healRunner, this._cfg.healInitialDelayMs);
+      }
+    });
+
     // Brightness state
-    this._bri = { day: 100, night: 7, override: null };
+    this._bri = {
+      day: this._cfg.briDay,
+      night: this._cfg.briNight,
+      override: null,
+    };
     this._lastBriSet = 0;
     this._lastBriVal = null;
 
@@ -734,22 +941,6 @@ export default {
       context.mqtt.subscribe(topic, fn);
     };
 
-    // ── Brightness settings (MQTT-overridable) ────────────────────────────────
-    const D = context.mqtt.deviceName ?? "pixoo-159";
-    const S = `pidicon-light/${D}/home/settings`;
-
-    sub(`${S}/bri_day`, (msg) => {
-      const v = parseInt(msg.trim(), 10);
-      if (!isNaN(v) && v >= 1 && v <= 100) {
-        this._bri.day = v;
-      }
-    });
-    sub(`${S}/bri_night`, (msg) => {
-      const v = parseInt(msg.trim(), 10);
-      if (!isNaN(v) && v >= 1 && v <= 100) {
-        this._bri.night = v;
-      }
-    });
     sub("pidicon-light/debug/bri_override", (msg) => {
       const s = msg.trim();
       if (s === "") {
@@ -785,16 +976,7 @@ export default {
     });
 
     // Nuki stale detection via IP ping (devices only publish on state change)
-    const vrPoll = async () => {
-      this._s.nukiVrAlive = await pingHost("192.168.1.186");
-    };
-    const kePoll = async () => {
-      this._s.nukiKeAlive = await pingHost("192.168.1.244");
-    };
-    vrPoll();
-    kePoll();
-    this._nukiVrPoll = setInterval(vrPoll, 60_000);
-    this._nukiKePoll = setInterval(kePoll, 60_000);
+    this._restartNukiPolls();
 
     sub("z2m/wz/contact/te-door", (msg) => {
       this._s.terraceOpen = parseContact(msg);
@@ -850,9 +1032,10 @@ export default {
         }
       }
     };
-    this._healTimer = setInterval(heal, 30_000);
+    this._healRunner = heal;
+    this._healTimer = setInterval(heal, this._cfg.healRetryMs);
     // Also run once at 5s — catches the common fast-broker case
-    setTimeout(heal, 5_000);
+    setTimeout(heal, this._cfg.healInitialDelayMs);
 
     context.mqtt.subscribe("home/ke/sonnenbattery/status", (msg) => {
       try {
@@ -899,6 +1082,7 @@ export default {
   },
 
   async destroy(context) {
+    this._unsubscribeSettings?.();
     this._stopSyncboxPoll();
     if (this._nukiVrPoll) {
       clearInterval(this._nukiVrPoll);
@@ -928,15 +1112,25 @@ export default {
       if (override !== null) {
         targetBri = override;
       } else if (s.sunElevation !== null) {
-        targetBri = elevToBri(s.sunElevation, night, day);
+        targetBri = elevToBri(
+          s.sunElevation,
+          night,
+          day,
+          this._cfg.sunElevLo,
+          this._cfg.sunElevHi,
+        );
       } else if (s.sunAbove !== null) {
         // elevation not yet received but state is known
         targetBri = s.sunAbove ? day : night;
       } else {
-        // no MQTT from HA at all — time-based fallback (07:30–20:30 = day)
+        // no MQTT from HA at all — time-based fallback
         const now = new Date();
         const mins = now.getHours() * 60 + now.getMinutes();
-        targetBri = mins >= 7 * 60 + 30 && mins < 20 * 60 + 30 ? day : night;
+        targetBri =
+          mins >= this._cfg.fallbackDayStartMins &&
+          mins < this._cfg.fallbackNightStartMins
+            ? day
+            : night;
       }
       const briChanged = targetBri !== this._lastBriVal;
       const briHeartbeat = Date.now() - this._lastBriSet >= BRI_HEARTBEAT_MS;
@@ -998,7 +1192,8 @@ export default {
       s.battState ?? "standby",
       this._frame,
     );
-    if (isStale(s.battSeen)) drawErrorMark(device, 0, 1, this._frame);
+    if (isStale(s.battSeen, this._cfg.staleMs))
+      drawErrorMark(device, 0, 1, this._frame);
 
     await drawPvCons(
       device,
@@ -1007,20 +1202,22 @@ export default {
       s.productionW,
       s.consumptionW,
     );
-    if (isStale(s.energySeen)) drawErrorMark(device, 1, 1, this._frame);
+    if (isStale(s.energySeen, this._cfg.staleMs))
+      drawErrorMark(device, 1, 1, this._frame);
 
     await drawBoiler(device, COLS[2].cx, ROWS[1].cy, s.boiler, this._frame);
-    if (isStale(s.boilerSeen)) drawErrorMark(device, 2, 1, this._frame);
+    if (isStale(s.boilerSeen, this._cfg.staleMs))
+      drawErrorMark(device, 2, 1, this._frame);
 
     // ── Row 2: Media ─────────────────────────────────────────────────────────
 
     // on = >threshold watts; everything else = amber (standby/off treated same)
-    const ps5On = (s.ps5Power ?? 0) > 25;
-    const tvOn = (s.tvPower ?? 0) > 26;
-    const pcOn = (s.pcPower ?? 0) > 10;
-    const ps5Stale = isStale(s.ps5Seen);
-    const tvStale = isStale(s.tvSeen);
-    const pcStale = isStale(s.pcSeen);
+    const ps5On = (s.ps5Power ?? 0) > this._cfg.ps5OnW;
+    const tvOn = (s.tvPower ?? 0) > this._cfg.tvOnW;
+    const pcOn = (s.pcPower ?? 0) > this._cfg.pcOnW;
+    const ps5Stale = isStale(s.ps5Seen, this._cfg.staleMs);
+    const tvStale = isStale(s.tvSeen, this._cfg.staleMs);
+    const pcStale = isStale(s.pcSeen, this._cfg.staleMs);
 
     const cy2 = ROWS[2].cy;
     drawPS5(device, COLS[0].cx, cy2, ps5On, ps5Stale);
@@ -1029,12 +1226,24 @@ export default {
 
     // Syncbox: online=lines, offline=red X in TV cell, not configured=nothing
     const syncOnline =
-      s.syncEnabled && s.syncSeen !== null && Date.now() - s.syncSeen < 30_000;
+      s.syncEnabled &&
+      s.syncSeen !== null &&
+      Date.now() - s.syncSeen < this._cfg.syncboxFreshMs;
     if (s.syncEnabled && !syncOnline) {
       drawSyncboxOffline(device);
     } else if (syncOnline) {
-      drawSyncboxLine(device, COLS[0].cx, cy2 + 6, s.syncInput === "input4"); // PS5
-      drawSyncboxLine(device, COLS[2].cx, cy2 + 6, s.syncInput === "input2"); // PC
+      drawSyncboxLine(
+        device,
+        COLS[0].cx,
+        cy2 + 6,
+        s.syncInput === this._cfg.syncboxInputPs5,
+      );
+      drawSyncboxLine(
+        device,
+        COLS[2].cx,
+        cy2 + 6,
+        s.syncInput === this._cfg.syncboxInputPc,
+      );
     }
 
     if (ps5Stale) drawErrorMark(device, 0, 2, this._frame);
@@ -1061,12 +1270,12 @@ export default {
       new Promise((resolve) => {
         const req = https.request(
           {
-            hostname: "192.168.1.111",
+            hostname: this._cfg.syncboxHost,
             path: "/api/v1/execution/",
             method: "GET",
             headers: { Authorization: `Bearer ${token}` },
             rejectUnauthorized: false,
-            timeout: 2500,
+            timeout: this._cfg.syncboxTimeoutMs,
           },
           (res) => {
             let body = "";
@@ -1095,8 +1304,10 @@ export default {
       await poll();
     };
     run();
-    this._syncPoll = setInterval(run, 5000);
-    logger.info("[home] Syncbox polling started (every 5s)");
+    this._syncPoll = setInterval(run, this._cfg.syncboxPollMs);
+    logger.info(
+      `[home] Syncbox polling started (every ${this._cfg.syncboxPollMs}ms)`,
+    );
   },
 
   _stopSyncboxPoll() {
@@ -1104,5 +1315,53 @@ export default {
       clearInterval(this._syncPoll);
       this._syncPoll = null;
     }
+  },
+
+  _restartNukiPolls() {
+    if (this._nukiVrPoll) clearInterval(this._nukiVrPoll);
+    if (this._nukiKePoll) clearInterval(this._nukiKePoll);
+
+    const vrPoll = async () => {
+      this._s.nukiVrAlive = await pingHost(this._cfg.nukiVrIp);
+    };
+    const kePoll = async () => {
+      this._s.nukiKeAlive = await pingHost(this._cfg.nukiKeIp);
+    };
+    vrPoll();
+    kePoll();
+    this._nukiVrPoll = setInterval(vrPoll, this._cfg.nukiPingMs);
+    this._nukiKePoll = setInterval(kePoll, this._cfg.nukiPingMs);
+  },
+
+  _mapSettings(values) {
+    const [dayH, dayM] = values.fallback_day_start
+      .split(":")
+      .map((v) => parseInt(v, 10));
+    const [nightH, nightM] = values.fallback_night_start
+      .split(":")
+      .map((v) => parseInt(v, 10));
+    return {
+      briDay: values.bri_day,
+      briNight: values.bri_night,
+      sunElevLo: values.sun_elev_lo,
+      sunElevHi: values.sun_elev_hi,
+      fallbackDayStartMins: dayH * 60 + dayM,
+      fallbackNightStartMins: nightH * 60 + nightM,
+      staleMs: values.stale_ms,
+      nukiVrIp: values.nuki_vr_ip,
+      nukiKeIp: values.nuki_ke_ip,
+      nukiPingMs: values.nuki_ping_ms,
+      healRetryMs: values.heal_retry_ms,
+      healInitialDelayMs: values.heal_initial_delay_ms,
+      ps5OnW: values.ps5_on_w,
+      tvOnW: values.tv_on_w,
+      pcOnW: values.pc_on_w,
+      syncboxHost: values.syncbox_host,
+      syncboxTimeoutMs: values.syncbox_timeout_ms,
+      syncboxPollMs: values.syncbox_poll_ms,
+      syncboxFreshMs: values.syncbox_fresh_ms,
+      syncboxInputPs5: values.syncbox_input_ps5,
+      syncboxInputPc: values.syncbox_input_pc,
+    };
   },
 };

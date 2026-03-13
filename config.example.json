@@ -8,6 +8,13 @@
       "ip": "192.168.1.xxx",
       "scenes": ["clock"],
       "minFrameMs": 500,
+      "sceneSettings": {
+        "clock": {
+          "text_color": "#00FF00",
+          "show_seconds": true,
+          "refresh_ms": 1000
+        }
+      },
       "preview": {
         "showGrid": false,
         "pollMs": 2000
@@ -21,6 +28,14 @@
       "ip": "192.168.1.xxx",
       "scenes": ["home"],
       "minFrameMs": 500,
+      "sceneSettings": {
+        "home": {
+          "bri_day": 100,
+          "bri_night": 7,
+          "fallback_day_start": "07:30",
+          "fallback_night_start": "20:30"
+        }
+      },
       "preview": {
         "showGrid": true,
         "pollMs": 2000

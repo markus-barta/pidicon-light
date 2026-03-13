@@ -10,6 +10,7 @@ services:
     volumes:
       - ./config.json:/data/config.json
       - ./scenes:/data/scenes:ro
+      - ./generated-scenes:/data/generated-scenes
     env_file:
       - /home/mba/secrets/pidicon-light.env
     labels:
