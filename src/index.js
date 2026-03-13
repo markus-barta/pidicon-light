@@ -4,7 +4,7 @@
  */
 
 import { ConfigLoader } from "../lib/config-loader.js";
-import { SceneLoader } from "../lib/scene-loader.js";
+import { SceneLoader, loadSceneMetadata } from "../lib/scene-loader.js";
 import { RenderLoop } from "./render-loop.js";
 import { UlanziDriver } from "../lib/ulanzi-driver.js";
 import { PixooDriver } from "../lib/pixoo-driver.js";
@@ -59,6 +59,7 @@ let baseConfig = null; // Raw file config; overlay merges on top of this
 let effectiveConfig = null; // Last computed merged config (served by WebServer)
 let webServer = null;
 let framePreviewStore = null;
+let sceneMetadata = {};
 
 // ---------------------------------------------------------------------------
 
@@ -222,6 +223,9 @@ async function applyOverlayReload() {
     await sceneLoader.clearCache();
 
     const configDir = dirname(configPath);
+    sceneMetadata = await loadSceneMetadata(configDir, effectiveConfig.scenes, {
+      logger,
+    });
     sceneLoader = new SceneLoader(configDir, effectiveConfig.scenes, {
       logger,
       mqttService,
@@ -267,6 +271,9 @@ async function reloadConfig(newConfigContent) {
 
     // Re-create SceneLoader with effective config's scenes map
     const configDir = dirname(configPath);
+    sceneMetadata = await loadSceneMetadata(configDir, effectiveConfig.scenes, {
+      logger,
+    });
     sceneLoader = new SceneLoader(configDir, effectiveConfig.scenes, {
       logger,
       mqttService,
@@ -352,6 +359,9 @@ async function main() {
   // SceneLoader resolves paths relative to config file's directory
   // so ./scenes/clock.js works both locally and in /data volume
   const configDir = dirname(configPath);
+  sceneMetadata = await loadSceneMetadata(configDir, effectiveConfig.scenes, {
+    logger,
+  });
   sceneLoader = new SceneLoader(configDir, effectiveConfig.scenes, {
     logger,
     mqttService,
@@ -370,6 +380,7 @@ async function main() {
   webServer = new WebServer({
     configPath,
     getEffectiveConfig: () => effectiveConfig,
+    getSceneMetadata: () => sceneMetadata,
     getFramePreviews: () => framePreviewStore?.list() || {},
     mqttService,
     logger,
