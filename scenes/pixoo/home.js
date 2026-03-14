@@ -1300,6 +1300,12 @@ export default {
           ? "active"
           : "idle"
         : "standby";
+      if (!this._lastSyncTrace || Date.now() - this._lastSyncTrace > 5000) {
+        this._lastSyncTrace = Date.now();
+        this._logger.info(
+          `[home][syncbox] active=${s.syncActive} hdmiActive=${s.syncHdmiActive} input=${s.syncInput} ps5On=${ps5On} pcOn=${pcOn} ps5Mode=${ps5SyncMode} pcMode=${pcSyncMode}`,
+        );
+      }
       drawSyncboxLine(device, COLS[0].cx, cy2 + 7, ps5SyncMode);
       drawSyncboxLine(device, COLS[2].cx, cy2 + 7, pcSyncMode);
     }
