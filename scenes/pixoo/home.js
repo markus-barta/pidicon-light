@@ -170,13 +170,31 @@ const NUKI_IMAGE_PATHS = {
   open: resolve(__dirname, "../../assets/pixoo/nuki-open.png"),
   closed: resolve(__dirname, "../../assets/pixoo/nuki-closed.png"),
 };
+const MEDIA_IMAGE_PATHS = {
+  ps5On: resolve(__dirname, "../../assets/pixoo/icons/ps5-on.png"),
+  ps5Standby: resolve(__dirname, "../../assets/pixoo/icons/ps5-standby.png"),
+  tvOn: resolve(__dirname, "../../assets/pixoo/icons/tv-on.png"),
+  tvStandby: resolve(__dirname, "../../assets/pixoo/icons/tv-standby.png"),
+  pcOn: resolve(__dirname, "../../assets/pixoo/icons/pc-on.png"),
+  pcOff: resolve(__dirname, "../../assets/pixoo/icons/pc-off.png"),
+};
 
 function drawNukiIcon(d, image, cx, cy, alive) {
-  drawPixooImage(d, image, cx - 4, cy - 4);
+  drawPixooImage(d, image, cx - 4, cy - 3);
   if (!alive) {
     const [dr, dg, db] = [255, 190, 40];
     d._setPixel(cx + 5, cy - 1, dr, dg, db);
     d._setPixel(cx + 5, cy, dr, dg, db);
+  }
+}
+
+function drawMediaIcon(d, image, cx, cy, dot) {
+  const x = cx - Math.floor(image.width / 2);
+  const y = cy - Math.floor(image.height / 2);
+  drawPixooImage(d, image, x, y);
+  if (dot) {
+    const [dr, dg, db] = dot;
+    d._setPixel(cx, cy + 6, dr, dg, db);
   }
 }
 
@@ -811,6 +829,14 @@ export default {
       open: await loadPixooImage(NUKI_IMAGE_PATHS.open),
       closed: await loadPixooImage(NUKI_IMAGE_PATHS.closed),
     };
+    this._mediaImages = {
+      ps5On: await loadPixooImage(MEDIA_IMAGE_PATHS.ps5On),
+      ps5Standby: await loadPixooImage(MEDIA_IMAGE_PATHS.ps5Standby),
+      tvOn: await loadPixooImage(MEDIA_IMAGE_PATHS.tvOn),
+      tvStandby: await loadPixooImage(MEDIA_IMAGE_PATHS.tvStandby),
+      pcOn: await loadPixooImage(MEDIA_IMAGE_PATHS.pcOn),
+      pcOff: await loadPixooImage(MEDIA_IMAGE_PATHS.pcOff),
+    };
 
     this._cfg = this._mapSettings(context.settings.all());
     this._unsubscribeSettings = context.settings.subscribe((values) => {
@@ -1234,9 +1260,27 @@ export default {
     const pcStale = isStale(s.pcSeen, this._cfg.staleMs);
 
     const cy2 = ROWS[2].cy;
-    drawPS5(device, COLS[0].cx, cy2, ps5On, ps5Stale);
-    drawTV(device, COLS[1].cx, cy2, tvOn, tvStale);
-    drawPC(device, COLS[2].cx, cy2, pcOn, pcStale);
+    drawMediaIcon(
+      device,
+      ps5On ? this._mediaImages.ps5On : this._mediaImages.ps5Standby,
+      COLS[0].cx,
+      cy2,
+      _mediaColors(ps5On, ps5Stale).dot,
+    );
+    drawMediaIcon(
+      device,
+      tvOn ? this._mediaImages.tvOn : this._mediaImages.tvStandby,
+      COLS[1].cx,
+      cy2,
+      _mediaColors(tvOn, tvStale).dot,
+    );
+    drawMediaIcon(
+      device,
+      pcOn ? this._mediaImages.pcOn : this._mediaImages.pcOff,
+      COLS[2].cx,
+      cy2,
+      _mediaColors(pcOn, pcStale).dot,
+    );
 
     // Syncbox: online=lines, offline=red X in TV cell, not configured=nothing
     const syncOnline =
