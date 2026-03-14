@@ -970,7 +970,11 @@ export default {
     const _h = {};
     const sub = (topic, fn) => {
       _h[topic] = fn;
-      context.mqtt.subscribe(topic, fn);
+      if (topic.includes("#") || topic.includes("+")) {
+        context.mqtt.subscribeWildcard(topic, fn);
+      } else {
+        context.mqtt.subscribe(topic, fn);
+      }
     };
 
     sub("pidicon-light/debug/bri_override", (msg) => {
@@ -1000,18 +1004,20 @@ export default {
     });
 
     const NUKI = { 1: "locked", 2: "unlocking", 3: "unlocked", 4: "locking" };
-    sub("nuki/463F8F47/state", (msg) => {
+    sub("nuki/463F8F47/#", (msg, topic) => {
+      if (topic !== "nuki/463F8F47/state") return;
       const mapped = NUKI[parseInt(msg.trim())] ?? null;
       this._s.nukiVrState = mapped;
       this._logger.info(
-        `[home][trace ${this._traceId}] vr payload=${msg.trim()} mapped=${mapped} stateRef=${this._stateRef}`,
+        `[home][trace ${this._traceId}] vr topic=${topic} payload=${msg.trim()} mapped=${mapped} stateRef=${this._stateRef}`,
       );
     });
-    sub("nuki/4A5D18FF/state", (msg) => {
+    sub("nuki/4A5D18FF/#", (msg, topic) => {
+      if (topic !== "nuki/4A5D18FF/state") return;
       const mapped = NUKI[parseInt(msg.trim())] ?? null;
       this._s.nukiKeState = mapped;
       this._logger.info(
-        `[home][trace ${this._traceId}] ke payload=${msg.trim()} mapped=${mapped} stateRef=${this._stateRef}`,
+        `[home][trace ${this._traceId}] ke topic=${topic} payload=${msg.trim()} mapped=${mapped} stateRef=${this._stateRef}`,
       );
     });
 
@@ -1045,8 +1051,8 @@ export default {
     // Root cause: broker sees topic already subscribed by this client → skips
     // retained delivery. Re-subscribing forces a new retained message delivery.
     const nullChecks = [
-      ["nuki/463F8F47/state", () => this._s.nukiVrState !== null],
-      ["nuki/4A5D18FF/state", () => this._s.nukiKeState !== null],
+      ["nuki/463F8F47/#", () => this._s.nukiVrState !== null],
+      ["nuki/4A5D18FF/#", () => this._s.nukiKeState !== null],
       ["z2m/wz/contact/te-door", () => this._s.terraceOpen !== null],
       [
         "z2m/wz/contact/te-door/availability",
