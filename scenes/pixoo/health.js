@@ -9,8 +9,8 @@
  * Tab cycling: auto-cycle when hasAlerts(), stay on HOME when green
  */
 
-import { start as startPing } from "../lib/collectors/ping-collector.js";
-import { start as startRpc  } from "../lib/collectors/rpc-collector.js";
+import { start as startPing } from "../../lib/collectors/ping-collector.js";
+import { start as startRpc  } from "../../lib/collectors/rpc-collector.js";
 
 // ── Embedded config ───────────────────────────────────────────────────────────
 // Mirrors health-pixoo/src/config.js — override per-device IPs as needed.

@@ -363,6 +363,28 @@ and then dispatches inside the callback between:
 
 This removes the mixed exact-topic / availability-topic split that was still leaving `w13`, `w14`, and terrace payloads unresolved while the availability half was already present.
 
+### Final retained-state outcome (2026-03-14)
+
+`pixoo/home` retained-state bootstrapping is now verified working on `hsb1` for:
+
+- `nuki/463F8F47/state` (Nuki VR)
+- `nuki/4A5D18FF/state` (Nuki Keller)
+- `z2m/wz/contact/te-door/#` (terrace door)
+- `z2m/vk/contact/w13/#` (skylight W13)
+- `z2m/vr/contact/w14/#` (skylight W14)
+
+Observed final healthy startup behavior:
+
+```text
+[home] self-heal: all topics resolved, stopping
+```
+
+and no repeated re-subscribe loop for those retained sensors afterward.
+
+### Release note
+
+Patch release `2.3.1` contains the retained-state bootstrapping fixes for Pixoo `home`, plus cleanup for the obsolete `health` scene metadata import path so startup warnings are reduced.
+
 **Fixes now in place:**
 
 1. `lib/mqtt-service.js` forces retained replay on logical re-subscribe using MQTT v5 `rh: 0`
