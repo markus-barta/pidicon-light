@@ -1063,7 +1063,11 @@ export default {
       }
       for (const [topic] of pending) {
         if (_h[topic]) {
-          context.mqtt.subscribe(topic, _h[topic]);
+          if (topic.includes("#") || topic.includes("+")) {
+            context.mqtt.subscribeWildcard(topic, _h[topic]);
+          } else {
+            context.mqtt.subscribe(topic, _h[topic]);
+          }
           context.logger.info(`[home] self-heal: re-subscribed ${topic}`);
         }
       }
