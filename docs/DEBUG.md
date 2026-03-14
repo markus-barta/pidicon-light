@@ -350,6 +350,19 @@ The Ulanzi `clock_with_homestats` scene is different:
 
 This also explained why terrace / skylight contact sensors could remain stale in self-heal workflows when wildcard topic family subscriptions were used.
 
+**Follow-up fix on 2026-03-14 for terrace / skylight contacts:** `home.js` now subscribes to the full topic families for the three contact sensors as well:
+
+- `z2m/wz/contact/te-door/#`
+- `z2m/vk/contact/w13/#`
+- `z2m/vr/contact/w14/#`
+
+and then dispatches inside the callback between:
+
+- base topic → contact payload
+- `/availability` → online/offline payload
+
+This removes the mixed exact-topic / availability-topic split that was still leaving `w13`, `w14`, and terrace payloads unresolved while the availability half was already present.
+
 **Fixes now in place:**
 
 1. `lib/mqtt-service.js` forces retained replay on logical re-subscribe using MQTT v5 `rh: 0`
@@ -357,6 +370,7 @@ This also explained why terrace / skylight contact sensors could remain stale in
 3. `lib/mqtt-service.js` fans out shared topic messages correctly
 4. `lib/mqtt-service.js` now correctly matches both `+` and `#` wildcard patterns
 5. `scenes/pixoo/home.js` subscribes to Nuki topic families (`nuki/<id>/#`) and filters for `/state`
+6. `scenes/pixoo/home.js` subscribes to contact sensor topic families and resolves both contact + availability from one retained topic family
 
 Logs can now show:
 

@@ -859,7 +859,6 @@ export default {
   async init(context) {
     this._frame = 0;
     this._logger = context.logger;
-    this._traceId = `${context.deviceName}:${Date.now()}`;
 
     this._cfg = this._mapSettings(context.settings.all());
     this._unsubscribeSettings = context.settings.subscribe((values) => {
@@ -941,7 +940,6 @@ export default {
       syncSeen: null,
       syncEnabled: false,
     };
-    this._stateRef = Math.random().toString(36).slice(2, 8);
 
     const parseContact = (msg) => {
       try {
@@ -1016,37 +1014,28 @@ export default {
     // Nuki stale detection via IP ping (devices only publish on state change)
     this._restartNukiPolls();
 
-    sub("z2m/wz/contact/te-door", (msg) => {
-      const parsed = parseContact(msg);
-      this._s.terraceOpen = parsed;
-      this._logger.info(
-        `[home][trace ${this._traceId}] terrace payload=${msg.trim()} parsed=${parsed} stateRef=${this._stateRef}`,
-      );
-    });
-    sub("z2m/wz/contact/te-door/availability", (msg) => {
-      this._s.terraceOnline = parseAvailability(msg);
+    sub("z2m/wz/contact/te-door/#", (msg, topic) => {
+      if (topic === "z2m/wz/contact/te-door") {
+        this._s.terraceOpen = parseContact(msg);
+      } else if (topic === "z2m/wz/contact/te-door/availability") {
+        this._s.terraceOnline = parseAvailability(msg);
+      }
     });
 
-    sub("z2m/vk/contact/w13", (msg) => {
-      const parsed = parseContact(msg);
-      this._s.w13Open = parsed;
-      this._logger.info(
-        `[home][trace ${this._traceId}] w13 payload=${msg.trim()} parsed=${parsed} stateRef=${this._stateRef}`,
-      );
-    });
-    sub("z2m/vk/contact/w13/availability", (msg) => {
-      this._s.w13Online = parseAvailability(msg);
+    sub("z2m/vk/contact/w13/#", (msg, topic) => {
+      if (topic === "z2m/vk/contact/w13") {
+        this._s.w13Open = parseContact(msg);
+      } else if (topic === "z2m/vk/contact/w13/availability") {
+        this._s.w13Online = parseAvailability(msg);
+      }
     });
 
-    sub("z2m/vr/contact/w14", (msg) => {
-      const parsed = parseContact(msg);
-      this._s.w14Open = parsed;
-      this._logger.info(
-        `[home][trace ${this._traceId}] w14 payload=${msg.trim()} parsed=${parsed} stateRef=${this._stateRef}`,
-      );
-    });
-    sub("z2m/vr/contact/w14/availability", (msg) => {
-      this._s.w14Online = parseAvailability(msg);
+    sub("z2m/vr/contact/w14/#", (msg, topic) => {
+      if (topic === "z2m/vr/contact/w14") {
+        this._s.w14Open = parseContact(msg);
+      } else if (topic === "z2m/vr/contact/w14/availability") {
+        this._s.w14Online = parseAvailability(msg);
+      }
     });
 
     // Self-heal: shared MQTT client means the broker won't re-deliver retained
@@ -1057,21 +1046,21 @@ export default {
     const nullChecks = [
       ["nuki/463F8F47/#", () => this._s.nukiVrState !== null],
       ["nuki/4A5D18FF/#", () => this._s.nukiKeState !== null],
-      ["z2m/wz/contact/te-door", () => this._s.terraceOpen !== null],
       [
-        "z2m/wz/contact/te-door/availability",
-        () => this._s.terraceOnline !== null,
+        "z2m/wz/contact/te-door/#",
+        () => this._s.terraceOpen !== null && this._s.terraceOnline !== null,
       ],
-      ["z2m/vk/contact/w13", () => this._s.w13Open !== null],
-      ["z2m/vk/contact/w13/availability", () => this._s.w13Online !== null],
-      ["z2m/vr/contact/w14", () => this._s.w14Open !== null],
-      ["z2m/vr/contact/w14/availability", () => this._s.w14Online !== null],
+      [
+        "z2m/vk/contact/w13/#",
+        () => this._s.w13Open !== null && this._s.w13Online !== null,
+      ],
+      [
+        "z2m/vr/contact/w14/#",
+        () => this._s.w14Open !== null && this._s.w14Online !== null,
+      ],
     ];
     const heal = () => {
       const pending = nullChecks.filter(([, isHealed]) => !isHealed());
-      this._logger.info(
-        `[home][trace ${this._traceId}] heal stateRef=${this._stateRef} terrace=${this._s.terraceOpen}/${this._s.terraceOnline} w13=${this._s.w13Open}/${this._s.w13Online} w14=${this._s.w14Open}/${this._s.w14Online} pending=${pending.map(([topic]) => topic).join(",")}`,
-      );
       if (pending.length === 0) {
         clearInterval(this._healTimer);
         this._healTimer = null;
@@ -1089,9 +1078,6 @@ export default {
     this._healTimer = setInterval(heal, this._cfg.healRetryMs);
     // Also run once at 5s — catches the common fast-broker case
     setTimeout(heal, this._cfg.healInitialDelayMs);
-    this._logger.info(
-      `[home][trace ${this._traceId}] init stateRef=${this._stateRef}`,
-    );
 
     context.mqtt.subscribe("home/ke/sonnenbattery/status", (msg) => {
       try {
@@ -1138,9 +1124,6 @@ export default {
   },
 
   async destroy(context) {
-    this._logger?.info(
-      `[home][trace ${this._traceId}] destroy stateRef=${this._stateRef}`,
-    );
     this._unsubscribeSettings?.();
     this._stopSyncboxPoll();
     if (this._nukiVrPoll) {
