@@ -859,6 +859,7 @@ export default {
   async init(context) {
     this._frame = 0;
     this._logger = context.logger;
+    this._traceId = `${context.deviceName}:${Date.now()}`;
 
     this._cfg = this._mapSettings(context.settings.all());
     this._unsubscribeSettings = context.settings.subscribe((values) => {
@@ -940,6 +941,7 @@ export default {
       syncSeen: null,
       syncEnabled: false,
     };
+    this._stateRef = Math.random().toString(36).slice(2, 8);
 
     const parseContact = (msg) => {
       try {
@@ -999,10 +1001,18 @@ export default {
 
     const NUKI = { 1: "locked", 2: "unlocking", 3: "unlocked", 4: "locking" };
     sub("nuki/463F8F47/state", (msg) => {
-      this._s.nukiVrState = NUKI[parseInt(msg.trim())] ?? null;
+      const mapped = NUKI[parseInt(msg.trim())] ?? null;
+      this._s.nukiVrState = mapped;
+      this._logger.info(
+        `[home][trace ${this._traceId}] vr payload=${msg.trim()} mapped=${mapped} stateRef=${this._stateRef}`,
+      );
     });
     sub("nuki/4A5D18FF/state", (msg) => {
-      this._s.nukiKeState = NUKI[parseInt(msg.trim())] ?? null;
+      const mapped = NUKI[parseInt(msg.trim())] ?? null;
+      this._s.nukiKeState = mapped;
+      this._logger.info(
+        `[home][trace ${this._traceId}] ke payload=${msg.trim()} mapped=${mapped} stateRef=${this._stateRef}`,
+      );
     });
 
     // Nuki stale detection via IP ping (devices only publish on state change)
@@ -1049,6 +1059,9 @@ export default {
     ];
     const heal = () => {
       const pending = nullChecks.filter(([, isHealed]) => !isHealed());
+      this._logger.info(
+        `[home][trace ${this._traceId}] heal stateRef=${this._stateRef} vr=${this._s.nukiVrState} ke=${this._s.nukiKeState} terrace=${this._s.terraceOpen}/${this._s.terraceOnline} w13=${this._s.w13Open}/${this._s.w13Online} w14=${this._s.w14Open}/${this._s.w14Online} pending=${pending.map(([topic]) => topic).join(",")}`,
+      );
       if (pending.length === 0) {
         clearInterval(this._healTimer);
         this._healTimer = null;
@@ -1066,6 +1079,9 @@ export default {
     this._healTimer = setInterval(heal, this._cfg.healRetryMs);
     // Also run once at 5s — catches the common fast-broker case
     setTimeout(heal, this._cfg.healInitialDelayMs);
+    this._logger.info(
+      `[home][trace ${this._traceId}] init stateRef=${this._stateRef}`,
+    );
 
     context.mqtt.subscribe("home/ke/sonnenbattery/status", (msg) => {
       try {
@@ -1112,6 +1128,9 @@ export default {
   },
 
   async destroy(context) {
+    this._logger?.info(
+      `[home][trace ${this._traceId}] destroy stateRef=${this._stateRef}`,
+    );
     this._unsubscribeSettings?.();
     this._stopSyncboxPoll();
     if (this._nukiVrPoll) {
