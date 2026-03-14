@@ -1291,12 +1291,12 @@ export default {
       drawSyncboxOffline(device);
     } else if (syncOnline) {
       const ps5SyncMode = ps5On
-        ? s.syncInput === this._cfg.syncboxInputPs5
+        ? s.syncActive && s.syncInput === this._cfg.syncboxInputPs5
           ? "active"
           : "idle"
         : "standby";
       const pcSyncMode = pcOn
-        ? s.syncInput === this._cfg.syncboxInputPc
+        ? s.syncActive && s.syncInput === this._cfg.syncboxInputPc
           ? "active"
           : "idle"
         : "standby";
