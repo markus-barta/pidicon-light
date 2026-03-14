@@ -1344,6 +1344,8 @@ export default {
               try {
                 const d = JSON.parse(body);
                 this._s.syncInput = d.hdmiSource ?? null;
+                this._s.syncActive = d.syncActive === true;
+                this._s.syncHdmiActive = d.hdmiActive === true;
                 this._s.syncSeen = Date.now();
               } catch {}
               resolve();
