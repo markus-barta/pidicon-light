@@ -174,6 +174,12 @@ export class RenderLoop {
   async _applyPlay() {
     try {
       await this.driver.initialize();
+      if (typeof this.driver.setPower === "function") {
+        await this.driver.setPower(true);
+      }
+      if (this.currentScene && typeof this.driver.switchToApp === "function") {
+        await this.driver.switchToApp(this.driver.appName || "pidicon_light");
+      }
     } catch (err) {
       this.logger.warn(
         `[RenderLoop:${this.deviceName}] play: re-init failed: ${err.message}`,
