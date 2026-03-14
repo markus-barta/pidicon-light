@@ -342,9 +342,17 @@ The Ulanzi `clock_with_homestats` scene is different:
 
 **Symptom:** Row 0 icons (Nuki, terrace door, skylights) show amber/unknown color after container restart, even though the sensors are online and have retained messages on the broker.
 
-**Root cause:** pidicon-light uses a **single shared MQTT client** for all scenes. When `clock_with_homestats` and `home` both subscribe to e.g. `nuki/463F8F47/state`, the broker sees the topic already subscribed by this client and **does not re-deliver the retained message** for the second subscription. The `home` scene's handler is registered but never fires.
+**Root cause:** pidicon-light uses a **single shared MQTT client** for all scenes. When `clock_with_homestats` and `home` both subscribe to e.g. `nuki/463F8F47/state`, the broker sees the topic already subscribed by this client and the second logical scene handler may miss retained replay.
 
-**Fix in place (`home.js`):** Periodic self-heal — re-subscribes any topic still `null` every 30s (also at 5s). Re-subscribing forces the broker to re-deliver retained messages. Stops automatically once all topics resolve.
+**Additional bug found on 2026-03-14:** the self-heal logic correctly re-subscribed the topic, but it relied on a plain re-subscribe to trigger retained delivery again. In practice, the broker still had retained state (`nuki/463F8F47/state = 3` for VR), but `home` kept missing it and stayed `null`.
+
+**Fix in place (`lib/mqtt-service.js`):** when a topic is re-subscribed for an existing logical scene subscription, pidicon-light now uses MQTT v5 retain handling `rh: 0` to explicitly request retained replay again. Logs now show:
+
+```text
+[MQTT] Scene "home" subscribed to "nuki/463F8F47/state" (forced retained replay)
+```
+
+Self-heal behavior remains the same conceptually — re-subscribe any topic still `null` every 30s (also at 5s) — but retained replay is now explicitly requested instead of assumed.
 
 ### Current live observation on `hsb1` (2026-03-14)
 
@@ -367,13 +375,13 @@ That means:
 - but `nukiVrState` in `home.js` is still `null`
 - so the Pixoo can only show the unknown lock glyph until a real MQTT state arrives
 
-Most likely current explanation:
+What was discovered live instead:
 
-- the broker is **not delivering a retained payload** for `nuki/463F8F47/state` to the `home` scene,
-- or there is **no retained message currently stored** for that topic,
-- so `home` never receives an initial state until the next real lock transition event.
+- the broker **did** have retained state for `nuki/463F8F47/state`
+- external systems were therefore correct (`open`)
+- pidicon-light was wrong because its self-heal re-subscribe did not force retained replay strongly enough
 
-This matches the repeated self-heal loop: the scene keeps trying because the value never becomes non-null.
+So the stale/unknown display in that case was an app bug, not a missing broker state.
 
 **If amber icons persist >60s after restart:**
 
@@ -407,8 +415,9 @@ If Pixoo shows Nuki VR stale but the lock is online:
 
 1. Check if `nuki/463F8F47/state` has a retained payload on the broker
 2. Check container logs for endless `self-heal: re-subscribed nuki/463F8F47/state`
-3. If ping works but self-heal never resolves, the missing piece is MQTT state, not IP reachability
-4. Trigger a real VR lock transition and see whether the stale state clears immediately
+3. Check whether broker retained state exists independently with `mosquitto_sub`
+4. If broker has state but Pixoo stays unknown, suspect retained replay / subscription handling
+5. After the 2026-03-14 fix, look for `forced retained replay` in logs
 
 If Pixoo shows the correct lock shape/color but an amber offline dot:
 
@@ -456,6 +465,10 @@ Good next steps, in order:
 5. **Infrastructure fix outside pidicon-light**
    - better AP placement / channel cleanup / RSSI investigation for `Vorraum`
    - because visualization improvements help diagnosis, but do not fix the RF problem itself
+
+6. **Broker / client behavior hardening**
+   - keep MQTT retained replay explicit on self-heal paths
+   - avoid relying on broker-specific defaults for repeated logical subscriptions on one shared client
 
 **Do not "fix" by removing shared subscriptions** — topics like `nuki/463F8F47/state` must be shared between scenes (clock_with_homestats also uses Nuki state). The periodic re-heal is the correct mitigation.
 
