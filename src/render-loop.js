@@ -162,7 +162,6 @@ export class RenderLoop {
   async _applyStop() {
     try {
       await this.driver.clear();
-      if (typeof this.driver.push === "function") await this.driver.push();
       if (typeof this.driver.setPower === "function")
         await this.driver.setPower(false);
     } catch (err) {
