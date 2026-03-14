@@ -385,6 +385,37 @@ and no repeated re-subscribe loop for those retained sensors afterward.
 
 Patch release `2.3.1` contains the retained-state bootstrapping fixes for Pixoo `home`, plus cleanup for the obsolete `health` scene metadata import path so startup warnings are reduced.
 
+### SyncBox indicator semantics (bottom row)
+
+For Pixoo `home`, PS5 and PC use a **separate SyncBox line below the power dot**.
+
+This is intentionally separate from the device power dot.
+
+Power dot:
+
+- green = target device is on
+- amber = target device is off / standby
+- gray = target device telemetry stale
+
+SyncBox line:
+
+- gray 3px = not targeted by SyncBox
+- white 3px = targeted, but sync effect not running
+- blue 5px = targeted and sync effect actively running
+
+This distinction matters because all of these can happen independently:
+
+- the device can be on while SyncBox is not targeting it
+- the target can be selected while ambilight/sync is disabled
+- the target can be selected and actively syncing
+
+The runtime mapping uses:
+
+- `hdmiSource` to determine target selection
+- `syncActive` to determine whether the ambilight effect is actually active
+
+Targeted + sync off should therefore be **white**, not gray and not blue.
+
 **Fixes now in place:**
 
 1. `lib/mqtt-service.js` forces retained replay on logical re-subscribe using MQTT v5 `rh: 0`

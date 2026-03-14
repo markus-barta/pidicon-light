@@ -140,6 +140,39 @@ Side-by-side 4×6px tiles. Frame: mid-gray. Fill: dark red (closed) / bright gre
 - Closed: panels meet at center seam, handles face inward.
 - Open: panels slid to outer edges, handles face outward.
 
+### Bottom row indicators (PS5 / TV / PC)
+
+Bottom row uses **two independent indicator layers** below the device icon:
+
+1. **Power dot** — one centered pixel below each device icon.
+   - Green: device power above configured on-threshold
+   - Amber/orange: device off or standby
+   - Gray: telemetry stale
+   - Applies to PS5, TV, and PC
+
+2. **SyncBox line** — a horizontal 3-dot / 5-dot line below the power dot.
+   - Applies only to PS5 and PC
+   - No SyncBox line is drawn under TV
+
+SyncBox line semantics:
+
+- **Gray 3px** — target not selected by SyncBox
+- **White 3px** — target selected, but ambilight/sync effect is not running
+- **Blue 5px** — target selected and ambilight/sync effect is actively running
+
+Important nuance:
+
+- white still applies if the target device itself is off/standby but the SyncBox target is selected
+- blue requires both:
+  - selected SyncBox target matches the device input
+  - SyncBox reports active syncing (`syncActive === true`)
+
+This allows the UI to show three independent facts at once:
+
+- whether the device itself is powered on
+- which SyncBox output/target is selected
+- whether the ambilight effect is currently active
+
 ### General palette conventions
 
 | Role             | Color                        | Notes                                          |

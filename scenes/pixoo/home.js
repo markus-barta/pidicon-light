@@ -206,12 +206,11 @@ function drawPowerStatusDot(d, cx, cy, color) {
 }
 
 function drawSyncboxStatusLine(d, cx, cy, mode) {
-  const [r, g, b] =
-    mode === "active"
-      ? [60, 140, 255]
-      : mode === "standby"
-        ? [235, 235, 235]
-        : [50, 50, 50];
+  if (mode === "active") {
+    hLine(d, cx - 2, cx + 2, cy + 9, 60, 140, 255);
+    return;
+  }
+  const [r, g, b] = mode === "standby" ? [235, 235, 235] : [50, 50, 50];
   hLine(d, cx - 1, cx + 1, cy + 9, r, g, b);
 }
 
