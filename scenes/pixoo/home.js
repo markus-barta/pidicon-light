@@ -1321,16 +1321,18 @@ export default {
     if (s.syncEnabled && !syncOnline) {
       drawSyncboxOffline(device);
     } else if (syncOnline) {
-      const ps5SyncMode = ps5On
-        ? s.syncActive && s.syncInput === this._cfg.syncboxInputPs5
+      const ps5Targeted = s.syncInput === this._cfg.syncboxInputPs5;
+      const pcTargeted = s.syncInput === this._cfg.syncboxInputPc;
+      const ps5SyncMode = ps5Targeted
+        ? s.syncActive && ps5On
           ? "active"
-          : "idle"
-        : "standby";
-      const pcSyncMode = pcOn
-        ? s.syncActive && s.syncInput === this._cfg.syncboxInputPc
+          : "standby"
+        : "idle";
+      const pcSyncMode = pcTargeted
+        ? s.syncActive && pcOn
           ? "active"
-          : "idle"
-        : "standby";
+          : "standby"
+        : "idle";
       drawSyncboxStatusLine(device, COLS[0].cx, cy2, ps5SyncMode);
       drawSyncboxStatusLine(device, COLS[2].cx, cy2, pcSyncMode);
     }
