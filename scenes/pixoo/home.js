@@ -200,14 +200,19 @@ function drawPcIcon(d, image, cx, cy) {
   drawPixooImage(d, image, x, y);
 }
 
-function drawMediaStatusDot(d, cx, cy, mode) {
+function drawPowerStatusDot(d, cx, cy, color) {
+  const [r, g, b] = color;
+  d._setPixel(cx, cy + 7, r, g, b);
+}
+
+function drawSyncboxStatusLine(d, cx, cy, mode) {
   const [r, g, b] =
     mode === "active"
       ? [60, 140, 255]
       : mode === "standby"
         ? [235, 235, 235]
         : [50, 50, 50];
-  d._setPixel(cx, cy + 7, r, g, b);
+  hLine(d, cx - 1, cx + 1, cy + 9, r, g, b);
 }
 
 // ── Icon: Dual sliding glass terrace door ─────────────────────────────────────
@@ -1278,17 +1283,35 @@ export default {
       COLS[0].cx,
       cy2,
     );
+    drawPowerStatusDot(
+      device,
+      COLS[0].cx,
+      cy2,
+      _mediaColors(ps5On, ps5Stale).dot,
+    );
     drawMediaIcon(
       device,
       tvOn ? this._mediaImages.tvOn : this._mediaImages.tvStandby,
       COLS[1].cx,
       cy2,
     );
+    drawPowerStatusDot(
+      device,
+      COLS[1].cx,
+      cy2,
+      _mediaColors(tvOn, tvStale).dot,
+    );
     drawPcIcon(
       device,
       pcOn ? this._mediaImages.pcOn : this._mediaImages.pcOff,
       COLS[2].cx,
       cy2,
+    );
+    drawPowerStatusDot(
+      device,
+      COLS[2].cx,
+      cy2,
+      _mediaColors(pcOn, pcStale).dot,
     );
 
     // Syncbox: online=lines, offline=red X in TV cell, not configured=nothing
@@ -1309,8 +1332,8 @@ export default {
           ? "active"
           : "idle"
         : "standby";
-      drawMediaStatusDot(device, COLS[0].cx, cy2, ps5SyncMode);
-      drawMediaStatusDot(device, COLS[2].cx, cy2, pcSyncMode);
+      drawSyncboxStatusLine(device, COLS[0].cx, cy2, ps5SyncMode);
+      drawSyncboxStatusLine(device, COLS[2].cx, cy2, pcSyncMode);
     }
 
     if (ps5Stale) drawErrorMark(device, 0, 2, this._frame);
