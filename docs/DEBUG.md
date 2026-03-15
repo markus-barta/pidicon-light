@@ -363,6 +363,80 @@ and then dispatches inside the callback between:
 
 This removes the mixed exact-topic / availability-topic split that was still leaving `w13`, `w14`, and terrace payloads unresolved while the availability half was already present.
 
+### Full investigation history (2026-03-14 / 2026-03-15)
+
+This bug was investigated repeatedly throughout the session. Each time the
+immediate symptom was the same: `home` scene keeps re-subscribing wildcard
+topics (`nuki/.../#`, `z2m/.../#`) every 30s and never resolves them.
+
+**Attempt 1 — forced retained replay (`rh: 0`)**
+Re-subscribe now explicitly requests retained replay from broker. Result:
+broker acknowledges, but `home` callbacks still never fire. Insufficient.
+
+**Attempt 2 — shared-topic ownership tracking**
+`unsubscribeAll` was unconditionally removing the broker subscription even
+when other logical scenes still needed it. Fixed exact-topic path. Result:
+initial startup worked, but stale returned after hot-reload or settings save.
+
+**Attempt 3 — shared-topic fan-out**
+Per-scene message listeners were fragile; replaced with a single shared
+handler per topic that fans out to all logical owners. Result: initial
+startup worked, but stale returned again after any lifecycle event.
+
+**Attempt 4 — wildcard `#` matching**
+`_topicMatches()` only supported `+`, not `#`. Fixed. Result: initial
+startup resolved correctly. But stale returned after config save / scene
+reload.
+
+**Attempt 5 — wildcard self-heal path**
+Self-heal was re-subscribing wildcard topics via `context.mqtt.subscribe()`
+(exact-topic path) instead of `subscribeWildcard()`. Fixed in `home.js`.
+Result: worked on fresh container start, but still returned after hot-reload.
+
+**Attempt 6 — wildcard shared entry tracking**
+`subscribeWildcard()` was rewritten to use the same durable shared-entry
+model as exact topics. Result: initial startup worked again, but stale
+still returned after scene destroy/reload cycle.
+
+**Attempt 7 — per-device scene caching**
+Scene loader cached by scene name only, so two Ulanzi devices shared one
+scene instance. Fixed to cache by `sceneName::deviceName`. Not directly
+related to stale MQTT, but uncovered during the same session.
+
+**ROOT CAUSE FOUND (Attempt 8, 2026-03-15):**
+
+`unsubscribeAll(sceneName)` only cleaned up exact-topic entries from
+`_topicEntries`. It completely ignored `_wildcardEntries`.
+
+So when a scene was destroyed and re-created (hot-reload, config save,
+settings save, stop/start), the lifecycle was:
+
+1. `scene.destroy()` → `mqtt.unsubscribeAll("home")`
+2. exact topics cleaned up from `_topicEntries` ✓
+3. wildcard entries in `_wildcardEntries` left orphaned ✗
+4. old `sharedHandler` still registered on MQTT client
+5. old `callbacks` map still holds reference to old scene callback
+6. new `scene.init()` → `subscribeWildcard("home", "nuki/463F8F47/#", newCallback)`
+7. sees existing `wildcardEntry` → `firstLogicalOwner = false`
+8. adds new callback to the old `wildcardEntry.callbacks` map
+9. but old `sharedHandler` dispatches to all callbacks including old dead ones
+10. retained replay arrives at the broker level
+11. `sharedHandler` fires, but the callback mutates the OLD scene instance state
+12. the NEW scene instance's `this._s.nukiVrState` stays `null`
+13. self-heal sees `null`, re-subscribes, repeat forever
+
+This explains every single observation:
+
+- works on completely fresh container start (no prior wildcard entries)
+- breaks after any scene destroy/reload cycle
+- broker state is always fine
+- retained replay is explicitly requested
+- subscription logs look correct
+- but scene state never updates
+
+**The fix:** `unsubscribeAll()` now also cleans up `_wildcardEntries`,
+removing callbacks and shared handlers when no logical owners remain.
+
 ### Final retained-state outcome (2026-03-14)
 
 `pixoo/home` retained-state bootstrapping is now verified working on `hsb1` for:
@@ -424,6 +498,7 @@ Targeted + sync off should therefore be **white**, not gray and not blue.
 4. `lib/mqtt-service.js` now correctly matches both `+` and `#` wildcard patterns
 5. `scenes/pixoo/home.js` subscribes to Nuki topic families (`nuki/<id>/#`) and filters for `/state`
 6. `scenes/pixoo/home.js` subscribes to contact sensor topic families and resolves both contact + availability from one retained topic family
+7. `lib/mqtt-service.js` `unsubscribeAll()` now cleans up both `_topicEntries` AND `_wildcardEntries` — **this was the real root cause of the recurring stale regression**
 
 Logs can now show:
 
