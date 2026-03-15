@@ -99,31 +99,38 @@ Documented here since these patterns recur in scene development.
 
 ### Nuki lock icon
 
-Now uses transparent PNG overlays plus a separate offline dot.
+Uses transparent 7×7 PNG overlays plus a separate offline dot.
 
-1. **PNG overlay** — cached 8×8 transparent asset, alpha-blended onto the framebuffer.
-   - `assets/pixoo/nuki-open.png`
-   - `assets/pixoo/nuki-closed.png`
-   - `assets/pixoo/nuki-stale.png`
-2. **Offline dot** — two amber pixels to the right of the lock body.
-   - Shown only when ICMP ping to the lock IP currently fails.
-   - Does not replace the last known MQTT lock state.
+**Four states:**
 
-Implementation notes:
+| MQTT state                          | PNG asset             | Meaning            |
+| ----------------------------------- | --------------------- | ------------------ |
+| `null`                              | `nuki-stale.png`      | No known state yet |
+| `"locked"` (1)                      | `nuki-closed.png`     | Locked             |
+| `"unlocked"` (3)                    | `nuki-open.png`       | Unlocked           |
+| `"locking"` (4) / `"unlocking"` (2) | `nuki-transition.png` | Transitioning      |
 
-- Images are decoded with `sharp` in `lib/pixoo-image.js`
-- PNGs are cached in memory after first load
-- alpha handling is explicit:
-  - `alpha = 0` -> skip pixel
-  - `alpha = 255` -> overwrite pixel
-  - partial alpha -> blend onto current framebuffer
+**Offline dot** — two amber pixels to the right of the icon (`cx+4`):
 
-This means the Pixoo now separates:
+- Shown only when ICMP ping to the lock IP currently fails.
+- Does not replace the last known MQTT lock state.
+- Separate from the state icon: a lock can show locked/unlocked/transitioning and still carry the offline dot.
 
-- **state** = last known MQTT lock state
-- **reachability** = current ping result
+**Implementation notes:**
 
-So a lock can show "locked" or "unlocked" and still carry an amber offline warning dot.
+- All 4 PNGs are 7×7 px, stored in `assets/pixoo/`
+- Loaded/cached at scene init via `loadPixooImage()` in `lib/pixoo-image.js`
+- Alpha-blended onto the framebuffer:
+  - `alpha = 0` → skip pixel
+  - `alpha = 255` → overwrite pixel
+  - partial alpha → blend onto current framebuffer
+- Anchor: `cx - 3, cy - 3` (centers 7px icon at cx/cy)
+- Offline dot: `cx + 4, cy - 1` and `cx + 4, cy`
+
+This separates two independent signals:
+
+- **state** = last known MQTT lock state (the icon)
+- **reachability** = current ping result (the dot)
 
 ### Skylight tiles (W13, W14)
 

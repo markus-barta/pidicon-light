@@ -169,6 +169,7 @@ const NUKI_IMAGE_PATHS = {
   unknown: resolve(__dirname, "../../assets/pixoo/nuki-stale.png"),
   open: resolve(__dirname, "../../assets/pixoo/nuki-open.png"),
   closed: resolve(__dirname, "../../assets/pixoo/nuki-closed.png"),
+  transition: resolve(__dirname, "../../assets/pixoo/nuki-transition.png"),
 };
 const MEDIA_IMAGE_PATHS = {
   ps5On: resolve(__dirname, "../../assets/pixoo/icons/ps5-on.png"),
@@ -180,11 +181,13 @@ const MEDIA_IMAGE_PATHS = {
 };
 
 function drawNukiIcon(d, image, cx, cy, alive) {
-  drawPixooImage(d, image, cx - 4, cy - 3);
+  // 7×7 icons: anchor at floor(7/2)=3 left and 3 up from center
+  drawPixooImage(d, image, cx - 3, cy - 3);
   if (!alive) {
+    // Offline dot: 1px right of icon edge (cx+4)
     const [dr, dg, db] = [255, 190, 40];
-    d._setPixel(cx + 5, cy - 1, dr, dg, db);
-    d._setPixel(cx + 5, cy, dr, dg, db);
+    d._setPixel(cx + 4, cy - 1, dr, dg, db);
+    d._setPixel(cx + 4, cy, dr, dg, db);
   }
 }
 
@@ -844,6 +847,7 @@ export default {
       unknown: await loadPixooImage(NUKI_IMAGE_PATHS.unknown),
       open: await loadPixooImage(NUKI_IMAGE_PATHS.open),
       closed: await loadPixooImage(NUKI_IMAGE_PATHS.closed),
+      transition: await loadPixooImage(NUKI_IMAGE_PATHS.transition),
     };
     this._mediaImages = {
       ps5On: await loadPixooImage(MEDIA_IMAGE_PATHS.ps5On),
@@ -1205,24 +1209,23 @@ export default {
     // NUKI col 0 — two circles stacked: VR (front) top, Keller (basement) bottom.
     // Row 0 = y 8..25 (18px). r=1 colored + r=2+r=3 gray outline. Top cy=13, bottom cy=21.
     const cx0 = COLS[0].cx;
+    const nukiImage = (state) => {
+      if (state === null) return this._nukiImages.unknown;
+      if (state === "unlocked") return this._nukiImages.open;
+      if (state === "locking" || state === "unlocking")
+        return this._nukiImages.transition;
+      return this._nukiImages.closed;
+    };
     drawNukiIcon(
       device,
-      s.nukiVrState === null
-        ? this._nukiImages.unknown
-        : s.nukiVrState === "unlocked"
-          ? this._nukiImages.open
-          : this._nukiImages.closed,
+      nukiImage(s.nukiVrState),
       cx0,
       ROWS[0].y0 + 4,
       s.nukiVrAlive,
     );
     drawNukiIcon(
       device,
-      s.nukiKeState === null
-        ? this._nukiImages.unknown
-        : s.nukiKeState === "unlocked"
-          ? this._nukiImages.open
-          : this._nukiImages.closed,
+      nukiImage(s.nukiKeState),
       cx0,
       ROWS[0].y1 - 4,
       s.nukiKeAlive,
