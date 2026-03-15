@@ -179,6 +179,10 @@ const MEDIA_IMAGE_PATHS = {
   pcOn: resolve(__dirname, "../../assets/pixoo/icons/pc-on.png"),
   pcOff: resolve(__dirname, "../../assets/pixoo/icons/pc-off.png"),
 };
+const DOOR_IMAGE_PATHS = {
+  closed: resolve(__dirname, "../../assets/pixoo/sliding-door-closed.png"),
+  open: resolve(__dirname, "../../assets/pixoo/sliding-door-open.png"),
+};
 
 function drawNukiIcon(d, image, cx, cy, alive) {
   // 7×7 icons: anchor at floor(7/2)=3 left and 3 up from center
@@ -215,54 +219,6 @@ function drawSyncboxStatusLine(d, cx, cy, mode) {
   }
   const [r, g, b] = mode === "standby" ? [235, 235, 235] : [50, 50, 50];
   hLine(d, cx - 1, cx + 1, cy + 9, r, g, b);
-}
-
-// ── Icon: Dual sliding glass terrace door ─────────────────────────────────────
-//
-// 12×9px total (cx±5, cy-4..cy+4). Two sliding panels inside outer frame.
-// Frame: mid-gray. Fill: very dark red (closed) / very dark green (open).
-// Handles: brighter warm pixel at vertical midpoint, inner edge of each panel.
-// Closed: panels meet at center seam; handles face inward.
-// Open:   panels slid to outer edges; center area shows fill gap.
-
-function drawSlidingDoor(d, cx, cy, isOpen) {
-  const x0 = cx - 5;
-  const y0 = cy - 4;
-  const W = 10; // inner width (x0..x0+W = 11px total incl. both side frames)
-  const H = 8; // inner height
-  const [fr, fg, fb] = C.frameGray;
-  const [dr, dg, db] = isOpen ? C.doorFillOpen : C.doorFill;
-  const [hr, hg, hb] = isOpen ? C.skyFillOpen : C.skyFill; // green=open, red=closed
-
-  // Outer frame
-  hLine(d, x0, x0 + W, y0, fr, fg, fb);
-  hLine(d, x0, x0 + W, y0 + H, fr, fg, fb);
-  vLine(d, x0, y0, y0 + H, fr, fg, fb);
-  vLine(d, x0 + W, y0, y0 + H, fr, fg, fb);
-
-  if (!isOpen) {
-    // Center seam (two adjacent lines)
-    vLine(d, cx - 1, y0, y0 + H, fr, fg, fb);
-    vLine(d, cx, y0, y0 + H, fr, fg, fb);
-    // Dark fill in each panel
-    fillRect(d, x0 + 1, y0 + 1, 4, H - 1, dr, dg, db); // left panel
-    fillRect(d, cx + 1, y0 + 1, 4, H - 1, dr, dg, db); // right panel
-    // Handles: inner edge of each panel, vertical center
-    d._setPixel(cx - 1, cy, hr, hg, hb); // left handle (+1px right per design)
-    d._setPixel(cx + 1, cy, hr, hg, hb); // right handle
-  } else {
-    // Panels slid out; inner edges close to outer frame
-    vLine(d, x0 + 3, y0, y0 + H, fr, fg, fb); // left panel inner edge
-    vLine(d, x0 + W - 3, y0, y0 + H, fr, fg, fb); // right panel inner edge
-    // Thin fill strips at outer edges
-    fillRect(d, x0 + 1, y0 + 1, 2, H - 1, dr, dg, db); // left strip
-    fillRect(d, x0 + W - 2, y0 + 1, 2, H - 1, dr, dg, db); // right strip
-    // Open center area slightly lighter
-    fillRect(d, x0 + 4, y0 + 1, W - 7, H - 1, dr, dg, db);
-    // Handles: now face outward (inner edge of each slid panel)
-    d._setPixel(x0 + 3, cy, hr, hg, hb);
-    d._setPixel(x0 + W - 3, cy, hr, hg, hb);
-  }
 }
 
 // ── Icon: Side-by-side skylights (W13 left, W14 right) ───────────────────────
@@ -857,6 +813,10 @@ export default {
       pcOn: await loadPixooImage(MEDIA_IMAGE_PATHS.pcOn),
       pcOff: await loadPixooImage(MEDIA_IMAGE_PATHS.pcOff),
     };
+    this._doorImages = {
+      closed: await loadPixooImage(DOOR_IMAGE_PATHS.closed),
+      open: await loadPixooImage(DOOR_IMAGE_PATHS.open),
+    };
 
     this._cfg = this._mapSettings(context.settings.all());
     this._traceWildcard = true;
@@ -1232,7 +1192,12 @@ export default {
     );
 
     // TERRACE dual sliding door (col 1) — error if z2m reports offline
-    drawSlidingDoor(device, COLS[1].cx, ROWS[0].cy, s.terraceOpen);
+    drawPixooImage(
+      device,
+      s.terraceOpen ? this._doorImages.open : this._doorImages.closed,
+      22,
+      8,
+    );
     if (s.terraceOnline === false) drawErrorMark(device, 1, 0, this._frame);
 
     // W13 + W14 side-by-side skylights (col 2) — error if either is offline
