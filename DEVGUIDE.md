@@ -47,7 +47,7 @@ config.json
 - Pixoo scenes can draw transparent PNG overlays by decoding them with `sharp`
 - helper: `lib/pixoo-image.js`
 - intended use: preload/cache small pixel-art assets in `init()`, then alpha-blit during `render()`
-- current production use: `scenes/pixoo/home.js` uses 8×8 PNG assets for Nuki icons while keeping the separate offline dot logic
+- current production use: `scenes/pixoo/home.js` uses 7×7 PNG assets for Nuki icons (open/closed/stale/transition) with a separate offline dot
 
 ```javascript
 export default {
@@ -121,31 +121,47 @@ pidicon-light/
 │   └── render-loop.js    # Per-device scene loop, backoff, circuit breaker, power-cycle
 ├── lib/
 │   ├── collectors/
-│   │   ├── ping-collector.js   # ICMP ping poller for health scenes
-│   │   └── rpc-collector.js    # Shelly Gen2 RPC + HTTP liveness poller
-│   ├── config-loader.js   # Config validation + loading
-│   ├── config-overlay.js  # MQTT-retained overlay layer (merges on top of file config)
-│   ├── config-watcher.js  # fs.watch hot reload (500ms debounce)
-│   ├── mqtt-service.js    # Health/state/config MQTT publishing + scene subscriptions
-│   ├── pixoo-driver.js    # Pixoo64 HTTP API driver (64×64 pixel buffer)
-│   ├── pixoo-font.js      # Embedded 3×5 bitmap font for Pixoo
-│   ├── scene-loader.js    # Dynamic scene imports, ESM cache-bust, init/destroy hooks
-│   ├── scenes-watcher.js  # Watches scene dirs for .js changes → hot-reload
-│   ├── ulanzi-driver.js   # Ulanzi/AWTRIX HTTP API driver (32×8)
-│   └── web-server.js      # Lightweight HTTP admin UI on port 8080
+│   │   ├── ping-collector.js       # ICMP ping poller for health scenes
+│   │   └── rpc-collector.js        # Shelly Gen2 RPC + HTTP liveness poller
+│   ├── config-loader.js            # Config validation + loading
+│   ├── config-overlay.js           # MQTT-retained overlay layer (merges on top of file config)
+│   ├── config-watcher.js           # fs.watch hot reload (500ms debounce)
+│   ├── mqtt-service.js             # MQTT publishing + shared scene subscription fan-out
+│   ├── pixoo-driver.js             # Pixoo64 HTTP API driver (64×64 pixel buffer)
+│   ├── pixoo-font.js               # Embedded 3×5 bitmap font for Pixoo
+│   ├── pixoo-image.js              # PNG loader/alpha-blitter using sharp
+│   ├── scene-loader.js             # Dynamic scene imports, per-device cache, init/destroy hooks
+│   ├── scene-settings-service.js   # Schema-driven per-device/per-scene settings
+│   ├── scenes-watcher.js           # Watches scene dirs for .js changes → hot-reload
+│   ├── ulanzi-driver.js            # Ulanzi/AWTRIX HTTP API driver (32×8)
+│   └── web-server.js               # Lightweight HTTP admin UI on port 8080
 ├── scenes/
 │   ├── pixoo/
-│   │   ├── home.js        # 3×3 grid smart home dashboard (production)
-│   │   └── health.js      # 4-tab network/device health dashboard
+│   │   ├── home.js        # 3-row smart home dashboard: Nuki/doors/skylights/energy/media
+│   │   └── health.js      # 4-tab network/device health dashboard (legacy/low priority)
 │   └── ulanzi/
-│       ├── clock_with_homestats.js  # Clock + Nuki/doors/battery/windows (production)
+│       ├── clock_with_homestats.js  # Clock + Nuki/doors/battery/skylights (production)
 │       ├── clock.js                 # Simple HH:MM:SS clock
 │       └── test-pattern.js          # Animated dot for display verification
+├── assets/
+│   └── pixoo/
+│       ├── nuki-closed.png          # 7×7 Nuki locked state icon
+│       ├── nuki-open.png            # 7×7 Nuki unlocked state icon
+│       ├── nuki-stale.png           # 7×7 Nuki unknown/stale state icon
+│       ├── nuki-transition.png      # 7×7 Nuki locking/unlocking state icon
+│       └── icons/
+│           ├── pc-on.png            # 7×7 PC powered on
+│           ├── pc-off.png           # 7×7 PC off
+│           ├── ps5-on.png           # 7×7 PS5 powered on
+│           ├── ps5-standby.png      # 7×7 PS5 standby
+│           ├── tv-on.png            # 7×7 TV powered on
+│           └── tv-standby.png       # 7×7 TV standby
+├── generated-scenes/      # Cloned/detached scene copies (mounted writable on hsb1)
 ├── docs/
 │   ├── AWTRIX-API.md      # Full AWTRIX HTTP API reference
-│   ├── PIXOO-API.md       # Pixoo HTTP API reference
-│   ├── DEBUG.md           # Debugging tips
-│   └── DEPLOY.md          # Deployment checklist
+│   ├── PIXOO-API.md       # Pixoo HTTP API + icon design notes
+│   ├── DEBUG.md           # Debugging guide incl. MQTT stale-state investigation history
+│   └── DEPLOY.md          # Deployment paths and ops reference
 ├── scripts/
 │   ├── create-backlog-item.sh  # Backlog management
 │   ├── lib/generate-hash.sh    # Hash generator
@@ -153,11 +169,13 @@ pidicon-light/
 ├── .github/workflows/
 │   └── build-and-push.yml      # CI: multi-platform build → GHCR on push to main
 ├── +pm/backlog/          # Backlog items (auto-generated)
+├── +agents/              # Agent rules and slash commands
 ├── .env.example          # Env var reference (MOSQUITTO_*)
 ├── .dockerignore         # Excludes devenv, secrets, docs from image
 ├── devenv.nix            # Nix dev environment
 ├── Dockerfile            # Container build
-└── config.example.json   # Config template
+├── docker-compose.example.yml  # Example compose with all mounts
+└── config.example.json   # Config template with sceneSettings example
 ```
 
 ## Scene Scheduling — How It Works
@@ -399,19 +417,24 @@ npm start
 
 ```bash
 # Scene file change (fast — hot-reloads in seconds):
-scp scenes/pixoo/home.js mba@hsb1.lan:~/docker/mounts/pidicon-light/scenes/pixoo/home.js
+scp scenes/pixoo/home.js mba@hsb1:~/docker/mounts/pidicon-light/scenes/pixoo/home.js
 git add scenes/pixoo/home.js && git commit -m "..." && git push
+
+# PNG asset change (must sync to host mount AND update image):
+scp assets/pixoo/nuki-*.png mba@hsb1:~/docker/mounts/pidicon-light/assets/pixoo/
+git add assets/ && git commit -m "..." && git push
+ssh mba@hsb1 "cd ~/docker && docker compose pull pidicon-light && docker compose up -d pidicon-light"
 
 # lib/ or src/ change (needs CI build):
 git add . && git commit -m "..." && git push
 gh run watch --exit-status   # wait for CI
-ssh mba@hsb1.lan "cd ~/docker && docker compose pull pidicon-light && docker compose up -d pidicon-light"
+ssh mba@hsb1 "cd ~/docker && docker compose pull pidicon-light && docker compose up -d pidicon-light"
 
 # Config-only change (hot-reloads, no restart needed):
-scp config.json mba@hsb1.lan:~/docker/mounts/pidicon-light/config.json
+scp config.json mba@hsb1:~/docker/mounts/pidicon-light/config.json
 
 # Watch logs:
-ssh mba@hsb1.lan "docker logs -f pidicon-light"
+ssh mba@hsb1 "docker logs -f pidicon-light"
 
 # Watchtower handles weekly auto-updates automatically.
 ```

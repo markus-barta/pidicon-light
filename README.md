@@ -1,35 +1,61 @@
 # pidicon-light
 
-Minimalist pixel display controller for AWTRIX/Ulanzi 32x8 LED matrices. Config-file driven, no Web UI.
+Minimalist pixel display controller for Ulanzi/AWTRIX 32×8 and Pixoo64 64×64 LED matrices.
+Config-file driven, web UI included, MQTT-connected, Docker-deployed.
 
-## Features
+**Version:** 2.4.0 — running live on `hsb1`
 
-- **Config-driven**: JSON configuration, version-controlled and testable
-- **MQTT monitoring**: Health, state, and config topics
-- **Error handling**: Exponential backoff (1s→10min), circuit breaker (10 errors max)
-- **Hot reload**: Config file watcher for seamless updates
-- **Multi-device**: Support for multiple Ulanzi displays
-- **Docker ready**: Containerized deployment with health checks
+---
+
+## What it does
+
+- Drives multiple pixel displays (Ulanzi/AWTRIX and Pixoo64) simultaneously
+- Runs configurable scene loops per device
+- Web UI on port 8080: live preview, scene management, per-device/per-scene settings
+- MQTT integration: health, state, config publishing; scene overlay control
+- Hot-reload: config and scene file changes apply without restart
+- Per-device scene settings with schema-driven UI (brightness, show seconds, etc.)
+- Transparent PNG overlay support via `sharp` for pixel-art icons on Pixoo
+
+## Devices in use
+
+| Device      | Type              | What it shows                        |
+| ----------- | ----------------- | ------------------------------------ |
+| `ulanzi-56` | Ulanzi TC001 32×8 | Clock + Nuki/doors/skylights/battery |
+| `ulanzi-57` | Ulanzi TC001 32×8 | Clock + Nuki/doors/skylights/battery |
+| `pixoo-159` | Pixoo64 64×64     | 3-row smart home dashboard           |
+
+---
 
 ## Quick Start
 
-### Local Development
+### Local dev
 
 ```bash
 npm install
 cp config.example.json config.json
+# edit config.json: set real device IPs
 npm start
+# Web UI: http://localhost:8080
 ```
 
 ### Docker
 
 ```bash
 docker build -t pidicon-light:latest .
-docker run -d --name pidicon-light --network host \
-  -e MQTT_PASS=<password> \
-  -v ./config.json:/data/config.json:ro \
+docker run -d --name pidicon-light \
+  --network host \
+  -e MOSQUITTO_HOST=192.168.1.101 \
+  -e MOSQUITTO_USER=smarthome \
+  -e MOSQUITTO_PASS=yourpassword \
+  -v $(pwd)/config.json:/data/config.json \
+  -v $(pwd)/scenes:/app/scenes:ro \
+  -v $(pwd)/generated-scenes:/data/generated-scenes \
+  -v $(pwd)/assets:/app/assets:ro \
   pidicon-light:latest
 ```
+
+---
 
 ## Configuration
 
@@ -42,105 +68,134 @@ docker run -d --name pidicon-light --network host \
       "name": "ulanzi-56",
       "type": "ulanzi",
       "ip": "192.168.1.56",
-      "scenes": ["clock", "test-pattern"]
+      "scenes": ["clock_with_homestats"],
+      "minFrameMs": 500,
+      "displayName": "Ulanzi Badezimmer",
+      "sceneSettings": {
+        "clock_with_homestats": {
+          "bri_day": 30,
+          "show_seconds": true
+        }
+      }
+    },
+    {
+      "name": "pixoo-159",
+      "type": "pixoo",
+      "ip": "192.168.1.159",
+      "scenes": ["home"],
+      "minFrameMs": 500,
+      "maxPowerCycles": 10,
+      "powerCyclePlugin": {
+        "topic": "z2m/wz/plug/zisp32/set",
+        "offPayload": "{\"state\":\"OFF\"}",
+        "onPayload": "{\"state\":\"ON\"}",
+        "offWaitMs": 10000,
+        "onWaitMs": 30000
+      }
     }
   ],
   "scenes": {
-    "clock": { "path": "./scenes/clock.js" },
-    "test-pattern": { "path": "./scenes/test-pattern.js" }
+    "clock_with_homestats": {
+      "path": "/app/scenes/ulanzi/clock_with_homestats.js"
+    },
+    "home": { "path": "/app/scenes/pixoo/home.js" }
   }
 }
 ```
 
-### Environment Variables
+### Environment variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MQTT_HOST` | localhost | MQTT broker |
-| `MQTT_PORT` | 1883 | MQTT port |
-| `MQTT_USER` | smarthome | MQTT user |
-| `MQTT_PASS` | - | MQTT password (required) |
-| `LOG_LEVEL` | info | error/warn/info/debug |
-| `TZ` | Europe/Vienna | Timezone |
+| Variable                   | Default         | Description                         |
+| -------------------------- | --------------- | ----------------------------------- |
+| `MOSQUITTO_HOST`           | `localhost`     | MQTT broker hostname                |
+| `MQTT_PORT`                | `1883`          | MQTT port                           |
+| `MOSQUITTO_USER`           | `smarthome`     | MQTT username                       |
+| `MOSQUITTO_PASS`           | —               | MQTT password (required)            |
+| `LOG_LEVEL`                | `info`          | `error` / `warn` / `info` / `debug` |
+| `TZ`                       | `Europe/Vienna` | Timezone                            |
+| `SONNEN_BATTERY_HOST`      | —               | Sonnen battery API host             |
+| `SONNEN_BATTERY_API_TOKEN` | —               | Sonnen battery API token            |
+| `SYNCBOX_BEARER_TOKEN`     | —               | Hue Play Sync Box bearer token      |
 
-## MQTT Topics
+---
 
-- `home/hsb1/pidicon-light/health` - Health status (retained)
-- `home/hsb1/pidicon-light/state` - Running state (retained)
-- `home/hsb1/pidicon-light/config` - Config info (retained)
+## Scene contract
 
-## Creating Scenes
+A scene is a plain ES module with a `render()` function. `init()` and `destroy()` are optional lifecycle hooks.
 
 ```javascript
 export default {
-  name: 'my-scene',
+  name: "my-scene",
+  pretty_name: "My Scene",
+  deviceType: "ulanzi",  // or "pixoo"
+  description: "What it does",
+
+  // Optional: expose typed settings in the web UI
+  settingsSchema: {
+    show_seconds: {
+      type: "boolean",
+      label: "Show Seconds",
+      group: "Display",
+      default: true,
+    },
+  },
+
+  async init(context) {
+    // subscribe to MQTT, preload images, etc.
+    context.mqtt.subscribe("some/topic", (payload) => { ... });
+  },
+
   async render(device) {
-    await device.drawCustom({
-      text: 'Hello',
-      color: '#00FF00',
-      center: true,
-    });
-    return 1000; // Update every second
-  }
+    await device.drawCustom({ text: "Hi", color: "#00FF00" });
+    return 1000; // ms until next render, or null to end scene
+  },
+
+  async destroy(context) {
+    context.mqtt.unsubscribeAll();
+  },
 };
 ```
 
-### Device API
+---
 
-- `drawCustom(appData)` - Draw with AWTRIX API
-- `clear()` - Clear display
-- `setPower(on/off)` - Power control
-- `setBrightness(0-255)` - Brightness
-- `getStats()` - Device stats
-- `switchToApp(name)` - Switch to built-in app
+## MQTT topics
 
-See `docs/AWTRIX-API.md` for full API.
+All pidicon-light topics are prefixed with `home/hsb1/pidicon-light/`:
+
+| Topic                         | Direction          | Description                             |
+| ----------------------------- | ------------------ | --------------------------------------- |
+| `.../health`                  | publish retained   | Health status + error count             |
+| `.../state`                   | publish retained   | Running state + per-device frame counts |
+| `.../config/effective`        | publish retained   | Merged effective config                 |
+| `.../<device>/mode`           | subscribe retained | `play` / `pause` / `stop` per device    |
+| `.../overlay/device/+/scenes` | subscribe          | Override scenes list per device         |
+
+Scene settings overlay topics per device + scene:
+
+```
+pidicon-light/<device>/<scene>/settings/<key>
+```
+
+---
 
 ## Deployment on hsb1
 
-### 1. Secrets (agenix)
+See `docs/DEPLOY.md` for the full deployment guide.
 
 ```bash
-# /home/mba/secrets/pidicon-light.env
-MQTT_PASS=<password>
+# Logs
+ssh mba@hsb1 "docker logs -f pidicon-light"
+
+# Deploy after lib/src change (CI builds image):
+git push origin main
+gh run watch --exit-status
+ssh mba@hsb1 "cd ~/docker && docker compose pull pidicon-light && docker compose up -d pidicon-light"
+
+# Deploy scene file change only (hot-reload, no restart):
+scp scenes/pixoo/home.js mba@hsb1:~/docker/mounts/pidicon-light/scenes/pixoo/home.js
 ```
 
-### 2. docker-compose.yml
-
-```yaml
-pidicon-light:
-  image: ghcr.io/markus-barta/pidicon-light:latest
-  container_name: pidicon-light
-  network_mode: host
-  restart: unless-stopped
-  environment:
-    - TZ=Europe/Vienna
-    - MQTT_HOST=localhost
-    - MQTT_USER=smarthome
-  env_file:
-    - /home/mba/secrets/pidicon-light.env
-  volumes:
-    - ./mounts/pidicon-light/data:/data
-  labels:
-    - "com.centurylinklabs.watchtower.enable=true"
-    - "com.centurylinklabs.watchtower.scope=weekly"
-```
-
-### 3. Deploy
-
-```bash
-ssh mba@hsb1.lan
-mkdir -p ~/docker/mounts/pidicon-light
-# Copy config.json and scenes/
-cd ~/docker && docker compose up -d pidicon-light
-docker logs -f pidicon-light
-```
-
-## Error Handling
-
-- Backoff: 1s → 2s → 4s → ... → 10min
-- Circuit breaker: 10 errors max
-- Status: ok → degraded → failed
+---
 
 ## License
 

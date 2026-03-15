@@ -28,11 +28,22 @@ Generated or detached scene copies should use `./generated-scenes/<name>.js` so 
 
 ```bash
 scp scenes/<name>.js mba@hsb1:~/docker/mounts/pidicon-light/scenes/
-# Trigger hot-reload (ConfigWatcher clears scene cache + re-imports):
-ssh mba@hsb1 "touch ~/docker/mounts/pidicon-light/config.json"
+# ScenesWatcher detects the change and hot-reloads within seconds.
+# No container restart needed.
 ```
 
-No container restart needed.
+### 1b. PNG asset changed (`assets/pixoo/*.png`)
+
+Scenes reference PNG assets via paths that resolve relative to the **mounted scene file**, so
+assets must be synced to the host mount AND the image must be updated (since `assets/` is baked
+into the image as a fallback):
+
+```bash
+scp assets/pixoo/nuki-*.png mba@hsb1:~/docker/mounts/pidicon-light/assets/pixoo/
+# Also push + pull image so the new assets are baked in:
+git add assets/ && git commit -m "update assets" && git push
+ssh mba@hsb1 "cd ~/docker && docker compose pull pidicon-light && docker compose up -d pidicon-light"
+```
 
 ### 2. Config changed (`config.json`)
 

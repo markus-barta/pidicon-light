@@ -1,125 +1,99 @@
-# pidicon-light Implementation Summary
+# Architecture Reference
 
-**Status**: ✅ Ready for deployment (QA passed)  
-**Date**: 2026-03-01  
-**QA Review**: Senior-level code quality
+**Version:** 2.4.0
 
 ---
 
-## QA Review Summary
+## Runtime flow
 
-### ✅ Passed
-- Error handling with exponential backoff (1s→10min)
-- Circuit breaker pattern (10 errors max)
-- MQTT service with proper reconnect logic
-- Config hot reload with debounce
-- Modular architecture (single responsibility)
-- CPU protection (async sleep, no busy-waiting)
-
-### 🔧 Fixed During QA
-- Removed unused `ErrorHandler` class (duplicate logic)
-- Fixed `reloadConfig()` missing configPath parameter
-- Fixed MQTT interval memory leak (clear before create)
-- Added JSDoc to render loop constructor
-- All syntax checks pass
-
----
-
-## Core Features
-
-1. **MQTT Integration** (`lib/mqtt-service.js`)
-   - Connects to MQTT broker with credentials from env vars
-   - Publishes health/state/config topics every 30s
-   - Retained messages for all topics
-   - Topics: `home/hsb1/pidicon-light/{health,state,config}`
-
-2. **Error Handling** (`src/render-loop.js`)
-   - Exponential backoff: 1s → 2s → 4s → ... → 10min (max)
-   - Circuit breaker: Opens after 10 consecutive errors
-   - Graceful degradation: Failed scenes don't crash the app
-   - Per-device error tracking
-
-3. **Config Hot Reload** (`lib/config-watcher.js`)
-   - Watches config.json for changes
-   - 500ms debounce to prevent race conditions
-   - Seamless reload without downtime
-
-4. **AWTRIX Driver** (`lib/ulanzi-driver.js`)
-   - Full HTTP API implementation
-   - `drawCustom()` for efficient rendering
-   - Helper methods: drawPixel, drawLine, drawText, etc.
-   - Device initialization and health checks
-
-5. **Clock Scene** (`scenes/clock.js`)
-   - Shows HH:MM or HH:MM:SS (alternates)
-   - Centered green text
-   - Updates every second
-   - Uses AWTRIX drawCustom API
-
----
-
-## Docker Deployment (hsb1)
-
-### Secrets (via agenix)
-
-Create `/home/mba/secrets/pidicon-light.env`:
-```bash
-MQTT_PASS=<your-mqtt-password>
 ```
-
-### docker-compose.yml Snippet
-
-```yaml
-pidicon-light:
-  image: ghcr.io/markus-barta/pidicon-light:latest
-  container_name: pidicon-light
-  network_mode: host
-  restart: unless-stopped
-  environment:
-    - TZ=Europe/Vienna
-    - MQTT_HOST=localhost
-    - MQTT_PORT=1883
-    - MQTT_USER=smarthome
-    - LOG_LEVEL=info
-  env_file:
-    - /home/mba/secrets/smarthome.env
-    - /home/mba/secrets/pidicon-light.env
-  volumes:
-    - ./mounts/pidicon-light/data:/data
-  labels:
-    - "com.centurylinklabs.watchtower.enable=true"
-    - "com.centurylinklabs.watchtower.scope=weekly"
+config.json + env vars
+  → ConfigLoader (validates, normalizes)
+    → SceneSettingsService (per-device/per-scene settings, MQTT overlay)
+      → RenderLoop (per device, per scene)
+        → SceneLoader (dynamic ESM import, per-device cache)
+          → DeviceDriver (UlanziDriver or PixooDriver)
+        → MqttService (shared client, fan-out subscriptions)
+      → ScenesWatcher (inotify on scene files → hot-reload)
+    → ConfigWatcher (inotify on config.json → hot-reload)
+  → WebServer (HTTP admin UI, REST API)
 ```
 
 ---
 
-## Error Handling Flow
+## Key design points
 
-```
-Scene render fails → Log error + backoff → Retry → 10 errors → Circuit opens → Pause → Reset → Retry
-```
+**Shared MQTT client, per-topic fan-out**
 
-**CPU Protection:**
-- Backoff prevents tight error loops (1s→10min)
-- Circuit breaker stops repeated failures
-- All async sleep, no busy-waiting
+All scenes share one MQTT client. `subscribe()` and `subscribeWildcard()` maintain
+a shared handler per topic that fans out to all logical scene callbacks. `unsubscribeAll(sceneName)`
+cleans up both exact-topic and wildcard entries. Forced retained replay (`rh: 0`) is requested
+on re-subscribe so scenes always receive the broker's retained value even if the topic was
+previously subscribed by another scene.
+
+**Per-device scene cache**
+
+`SceneLoader` caches scene instances by `${sceneName}::${deviceName}` so two devices using the
+same scene file each get their own in-memory instance, own subscriptions, and own settings state.
+
+**Self-heal loop**
+
+On startup, `scenes/pixoo/home.js` runs a self-heal timer that re-subscribes any topic whose
+state is still `null`. This compensates for cases where the broker cannot re-deliver retained
+messages to a freshly-subscribed shared client. The loop stops as soon as all expected topics
+resolve. See `docs/DEBUG.md` for the full investigation history.
+
+**PNG overlays (Pixoo)**
+
+`lib/pixoo-image.js` loads transparent PNGs via `sharp`, caches decoded RGBA in memory, and
+alpha-blits onto the 64×64 raw RGB buffer per pixel. Used for Nuki lock state icons and
+bottom-row media device icons.
+
+**Scene settings**
+
+Scenes expose a `settingsSchema`. The web UI generates a form per device/scene. Values
+are saved into `device.sceneSettings[sceneName]` in `config.json`. A retained MQTT overlay
+layer can override values temporarily without touching the config file.
+
+**Hot-reload**
+
+Two separate watchers:
+
+- `ConfigWatcher`: monitors `config.json` (500ms debounce) → tears down and rebuilds all render loops
+- `ScenesWatcher`: monitors `.js` files in scene dirs → evicts the changed scene from cache and refreshes metadata
+
+**Error handling / power-cycle**
+
+Each `RenderLoop` has exponential backoff (1s → 10min cap), a 10-consecutive-error circuit breaker,
+and an optional `powerCyclePlugin` that can power-cycle a device via MQTT plug before retrying.
 
 ---
 
-## MQTT Payloads
+## Deployment split (important)
 
-- **health**: `status: ok|degraded|failed`, errorCount, devices[]
-- **state**: `running`, currentScene, uptime, devices[]
-- **config**: configPath, deviceCount, sceneCount
+The Docker image contains core code (`src/`, `lib/`, `assets/`). Scene files and `config.json`
+are host-mounted and shadow the image. This means:
+
+| What changed                   | How to deploy                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| `scenes/*.js`                  | `scp` to `~/docker/mounts/pidicon-light/scenes/`; ScenesWatcher hot-reloads     |
+| `assets/pixoo/*.png`           | `scp` to `~/docker/mounts/pidicon-light/assets/pixoo/` + image pull             |
+| `config.json`                  | `scp` to `~/docker/mounts/pidicon-light/config.json`; ConfigWatcher hot-reloads |
+| `lib/`, `src/`, `package.json` | Push → CI → `docker compose pull` + `up -d` on hsb1                             |
+
+See `docs/DEPLOY.md` for the full ops reference.
 
 ---
 
-## Next Steps
+## MQTT subscription internals
 
-1. Create secrets: `/home/mba/secrets/pidicon-light.env`
-2. Add to `~/docker/docker-compose.yml`
-3. Build/push image: `./scripts/build-and-push.sh v0.1.0`
-4. Deploy on hsb1: `docker compose up -d pidicon-light`
-5. Verify: Check MQTT + display
+`lib/mqtt-service.js` maintains three Maps:
 
-**Build complete! Ready for deployment.** 🚀
+| Map                | Key                                  | Value                               |
+| ------------------ | ------------------------------------ | ----------------------------------- |
+| `_subscriptions`   | `sceneName` → `Map<topic, callback>` | Per-logical-owner subscriptions     |
+| `_topicEntries`    | exact topic                          | `{ callbacks: Map, sharedHandler }` |
+| `_wildcardEntries` | wildcard pattern                     | `{ callbacks: Map, sharedHandler }` |
+
+`unsubscribeAll(sceneName)` must clean both `_topicEntries` and `_wildcardEntries` to avoid
+orphaned handlers that dispatch retained messages to dead scene instances.
